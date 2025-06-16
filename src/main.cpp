@@ -4,48 +4,45 @@
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 
-#include <DHT.h>
-#include <DHT_U.h>
 
-#include <RTClib.h>
+#include <DHT.h>  // DHT11 Module
+#include <DHT_U.h>      
+#include <TinyGPSPlus.h>  // GPS Module
+#include <SoftwareSerial.h> // Virtual Serial for GPS
 
-// Defining PINS
+
+// Defining PINS------------------------------------------------------------------------//
 #define DHTPIN 12
 
+// Grove GPS air 350 Module
+static const int RXPin = 4, TXPin = 3;
+static const uint32_t GPSBaud = 9600;
 
-// Defining Device Types
+
+// Defining Device Types ----------------------------------------------------------------//
 #define DHTTYPE    DHT11 
 
-//Define Objects
+//Define Objects ------------------------------------------------------------------------//
 DHT_Unified dht(DHTPIN, DHTTYPE); //Create dht object
-RTC_DS3231 rtc; //Create rtc object
+TinyGPSPlus gps; // The TinyGPSPlus object
 
-// Set delay time structure
+// The serial connection to the GPS device
+SoftwareSerial ss(RXPin, TXPin);
+
+
+// Set delay time
 uint32_t delayMS;
-
-char t[32];
 
 void setup()
 {
     // Initialize devices
-  Serial.begin(9600);
+  Serial.begin(9600); // Physical Serial
+  ss.begin(GPSBaud); // Virtual Serial
+
   Wire.begin();
-  rtc.begin();
   dht.begin();
 
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); // Set initial time
-
-    while (!Serial); // Wait for serial port to be ready
-  if (! rtc.begin()) {
-    Serial.println("ERROR: Could not find RTC");
-    while(1);
-  }
-  if (rtc.lostPower()) {  //If RTC Lost power, reset time from PC
-    Serial.println("WARNING: RTC lost power, so we are assuming the current time is valid");
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-  }
-
-  // Set sensor structure
+  // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
   sensor_t sensor;
 
  // Set delay between sensor readings
@@ -55,13 +52,6 @@ void setup()
 void loop() {
   // Delay
   delay(delayMS);
-
-  // RTC ----------------------------------------------------------------------------------------------------------//
-  // Read Date and Time - adjust over time
-  DateTime now = rtc.now();
-  sprintf(t, "%02d:%02d:%02d %02d/%02d/%02d",  now.hour(), now.minute(), now.second(), now.day(), now.month(), now.year()); //adjust time over time 
-  Serial.print(F("Date/Time: ")); // Print Time to Serial Monitor
-  Serial.println(t);
 
   // DHT11 ----------------------------------------------------------------------------------------------------------//
   // Get temperature event and print its value
@@ -85,5 +75,67 @@ void loop() {
     Serial.print(event.relative_humidity);
     Serial.println(F("%"));
   }
-  //----------------------------------------------------------------------------------------------------------//
+  // GPS ----------------------------------------------------------------------------------------------------------//
+  while (ss.available() > 0)
+    if (gps.encode(ss.read()))
+      displayInfo();
+
+  if (millis() > 5000 && gps.charsProcessed() < 10)
+  {
+    Serial.println(F("No GPS detected: check wiring."));
+    while(true);
+  }
+}
+
+
+// Custom Functions -----------------------------------------------------------------------------------------//
+void displayInfo()
+{
+  Serial.print(F("Location: ")); 
+  if (gps.location.isValid())
+  {
+    Serial.print(gps.location.lat(), 6);
+    Serial.print(F(","));
+    Serial.print(gps.location.lng(), 6);
+  }
+  else
+  {
+    Serial.print(F("INVALID"));
+  }
+
+  Serial.print(F("  Date/Time: "));
+  if (gps.date.isValid())
+  {
+    Serial.print(gps.date.month());
+    Serial.print(F("/"));
+    Serial.print(gps.date.day());
+    Serial.print(F("/"));
+    Serial.print(gps.date.year());
+  }
+  else
+  {
+    Serial.print(F("INVALID"));
+  }
+
+  Serial.print(F(" "));
+  if (gps.time.isValid())
+  {
+    if (gps.time.hour() < 10) Serial.print(F("0"));
+    Serial.print(gps.time.hour());
+    Serial.print(F(":"));
+    if (gps.time.minute() < 10) Serial.print(F("0"));
+    Serial.print(gps.time.minute());
+    Serial.print(F(":"));
+    if (gps.time.second() < 10) Serial.print(F("0"));
+    Serial.print(gps.time.second());
+    Serial.print(F("."));
+    if (gps.time.centisecond() < 10) Serial.print(F("0"));
+    Serial.print(gps.time.centisecond());
+  }
+  else
+  {
+    Serial.print(F("INVALID"));
+  }
+
+  Serial.println();
 }

@@ -15,7 +15,7 @@
 #define DHTPIN 12
 
 // Grove GPS air 350 Module
-static const int RXPin = 0, TXPin = 1;
+static const int RXPin = 3, TXPin = 4;
 static const uint32_t GPSBaud = 9600;
 
 
@@ -35,12 +35,14 @@ uint32_t delayMS;
 
 void displayInfo(); // Function prototype
 
-void setup()
-{
+void setup() {
     // Initialize devices
   Serial.begin(9600); // Physical Serial
+
   Serial.println("Serial Started");
+
   ss.begin(GPSBaud); // Virtual Serial
+  
   Serial.println("Virtual Serial Started");
 
   Wire.begin();
@@ -54,12 +56,10 @@ void setup()
 }
 
 void loop() {
-  // Delay
-  delay(delayMS);
-
   // DHT11 ----------------------------------------------------------------------------------------------------------//
   // Get temperature event and print its value
   sensors_event_t event;
+
   dht.temperature().getEvent(&event);
   if (isnan(event.temperature)) {
     Serial.println(F("Error reading temperature!"));
@@ -89,12 +89,13 @@ void loop() {
     Serial.println(F("No GPS detected: check wiring."));
     while(true);
   }
+
+  // Delay
+  delay(delayMS);
 }
 
-
 // Custom Functions -----------------------------------------------------------------------------------------//
-void displayInfo()
-{
+void displayInfo() {
   Serial.print(F("Location: ")); 
   if (gps.location.isValid())
   {

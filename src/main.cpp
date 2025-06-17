@@ -15,7 +15,7 @@
 #define DHTPIN 12
 
 // Grove GPS air 350 Module
-static const int RXPin = 4, TXPin = 3;
+static const int RXPin = 0, TXPin = 1;
 static const uint32_t GPSBaud = 9600;
 
 
@@ -33,11 +33,15 @@ SoftwareSerial ss(RXPin, TXPin);
 // Set delay time
 uint32_t delayMS;
 
+void displayInfo(); // Function prototype
+
 void setup()
 {
     // Initialize devices
   Serial.begin(9600); // Physical Serial
+  Serial.println("Serial Started");
   ss.begin(GPSBaud); // Virtual Serial
+  Serial.println("Virtual Serial Started");
 
   Wire.begin();
   dht.begin();
@@ -46,7 +50,7 @@ void setup()
   sensor_t sensor;
 
  // Set delay between sensor readings
-  delayMS = sensor.min_delay / 1000;
+  delayMS = 1000;
 }
 
 void loop() {

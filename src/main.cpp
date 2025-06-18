@@ -81,8 +81,11 @@ void loop() {
   }
   // GPS ----------------------------------------------------------------------------------------------------------//
   while (ss.available() > 0)
-    if (gps.encode(ss.read()))
+    if (gps.encode(ss.read()))  {
+      Serial.println("Displaying GPS Data...");
       displayInfo();
+    }
+      
 
   if (millis() > 5000 && gps.charsProcessed() < 10)
   {

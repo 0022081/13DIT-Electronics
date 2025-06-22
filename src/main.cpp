@@ -15,7 +15,7 @@
 #define DHTPIN 12
 
 // Grove GPS air 350 Module
-static const int RXPin = 3, TXPin = 4;
+static const int RXPin = 4, TXPin = 3;
 static const uint32_t GPSBaud = 9600;
 
 
@@ -31,74 +31,14 @@ SoftwareSerial ss(RXPin, TXPin);
 
 
 // Set delay time
-uint32_t delayMS;
+//uint32_t delayMS;
 
-void displayInfo(); // Function prototype
-
-void setup() {
-    // Initialize devices
-  Serial.begin(9600); // Physical Serial
-
-  Serial.println("Serial Started");
-
-  ss.begin(GPSBaud); // Virtual Serial
-  
-  Serial.println("Virtual Serial Started");
-
-  Wire.begin();
-  dht.begin();
-
-  // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
-  sensor_t sensor;
-
- // Set delay between sensor readings
-  delayMS = 1000;
-}
-
-void loop() {
-  // DHT11 ----------------------------------------------------------------------------------------------------------//
-  // Get temperature event and print its value
-  sensors_event_t event;
-
-  dht.temperature().getEvent(&event);
-  if (isnan(event.temperature)) {
-    Serial.println(F("Error reading temperature!"));
-  }
-  else {
-    Serial.print(F("Temperature: "));
-    Serial.print(event.temperature);
-    Serial.println(F("°C"));
-  }
-  // Get humidity event and print its value.
-  dht.humidity().getEvent(&event);
-  if (isnan(event.relative_humidity)) {
-    Serial.println(F("Error reading humidity!"));
-  }
-  else {
-    Serial.print(F("Humidity: "));
-    Serial.print(event.relative_humidity);
-    Serial.println(F("%"));
-  }
-  // GPS ----------------------------------------------------------------------------------------------------------//
-  while (ss.available() > 0)
-    if (gps.encode(ss.read()))  {
-      Serial.println("Displaying GPS Data...");
-      displayInfo();
-    }
-      
-
-  if (millis() > 5000 && gps.charsProcessed() < 10)
-  {
-    Serial.println(F("No GPS detected: check wiring."));
-    while(true);
-  }
-
-  // Delay
-  delay(delayMS);
-}
+// void displayInfo(); // Function prototype
+// void smartDelay(unsigned long ms);
 
 // Custom Functions -----------------------------------------------------------------------------------------//
-void displayInfo() {
+void displayInfo() 
+{
   Serial.print(F("Location: ")); 
   if (gps.location.isValid())
   {
@@ -146,4 +86,72 @@ void displayInfo() {
   }
 
   Serial.println();
+}
+
+// This custom version of delay() ensures that the gps object is being "fed"
+void smartDelay(unsigned long ms)
+{
+  unsigned long start = millis();
+  do {
+    while (ss.available()) {
+      gps.encode(ss.read());
+    }
+  } while (millis() - start < ms);
+}
+
+
+void setup() {
+  // Initialize devices
+  Serial.begin(9600); // Physical Serial
+  ss.begin(GPSBaud); // Virtual Serial
+  Wire.begin();
+  dht.begin();
+
+  // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
+  sensor_t sensor;
+
+  // Set delay between sensor readings
+  //delayMS = 1000;
+}
+
+void loop() {
+  // DHT11 ----------------------------------------------------------------------------------------------------------//
+  // Get temperature event and print its value
+  sensors_event_t event;
+
+  dht.temperature().getEvent(&event);
+  if (isnan(event.temperature)) {
+    Serial.println(F("Error reading temperature!"));
+  }
+  else {
+    Serial.print(F("Temperature: "));
+    Serial.print(event.temperature);
+    Serial.println(F("°C"));
+  }
+  // Get humidity event and print its value.
+  dht.humidity().getEvent(&event);
+  if (isnan(event.relative_humidity)) {
+    Serial.println(F("Error reading humidity!"));
+  }
+  else {
+    Serial.print(F("Humidity: "));
+    Serial.print(event.relative_humidity);
+    Serial.println(F("%"));
+  }
+  // GPS ----------------------------------------------------------------------------------------------------------//
+  while (ss.available() > 0)  {
+     if (gps.encode(ss.read()))  {
+      Serial.println("Displaying GPS Data...");
+      displayInfo();
+    }
+  }
+
+  Serial.println("Loop Completed");
+  smartDelay(1000);
+      
+  if (millis() > 5000 && gps.charsProcessed() < 10) {
+    Serial.println(F("No GPS detected: check wiring."));
+    while(true);
+  }
+
 }

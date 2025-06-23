@@ -1,44 +1,99 @@
 
 // Including Libraries 
 #include <Arduino.h>
-#include <Adafruit_Sensor.h>
-#include <Wire.h>
+//#include <Adafruit_Sensor.h>
+//#include <Wire.h>
 
 
-#include <DHT.h>  // DHT11 Module
-#include <DHT_U.h>      
+//#include <DHT.h>  // DHT11 Module
+//#include <DHT_U.h>      
 #include <TinyGPSPlus.h>  // GPS Module
 #include <SoftwareSerial.h> // Virtual Serial for GPS
 
 
 // Defining PINS------------------------------------------------------------------------//
-#define DHTPIN 12
+//#define DHTPIN 12
 
 // Grove GPS air 350 Module
 static const int RXPin = 4, TXPin = 3;
 static const uint32_t GPSBaud = 9600;
+const long interval = 10000;
+unsigned long previousMillis = 0;
 
 
 // Defining Device Types ----------------------------------------------------------------//
 #define DHTTYPE    DHT11 
 
 //Define Objects ------------------------------------------------------------------------//
-DHT_Unified dht(DHTPIN, DHTTYPE); //Create dht object
+//DHT_Unified dht(DHTPIN, DHTTYPE); //Create dht object
 TinyGPSPlus gps; // The TinyGPSPlus object
 
 // The serial connection to the GPS device
-SoftwareSerial ss(RXPin, TXPin);
+SoftwareSerial GPSserial(RXPin, TXPin);
 
 
-// Set delay time
-//uint32_t delayMS;
+void setup() {
+  // Initialize devices
+  Serial.begin(9600); // Physical Serial
+  GPSserial.begin(GPSBaud); // Virtual Serial
+  //Wire.begin();
+  //dht.begin();
 
-// void displayInfo(); // Function prototype
-// void smartDelay(unsigned long ms);
+  Serial.println("Setup complete");
+
+  // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
+  //sensor_t sensor;
+
+  // Set delay between sensor readings
+}
+
+void loop() {
+  // DHT11 ----------------------------------------------------------------------------------------------------------//
+  // // Get temperature event and print its value
+  // sensors_event_t event;
+
+  // dht.temperature().getEvent(&event);
+  // if (isnan(event.temperature)) {
+  //   Serial.println(F("Error reading temperature!"));
+  // }
+  // else {
+  //   Serial.print(F("Temperature: "));
+  //   Serial.print(event.temperature);
+  //   Serial.println(F("°C"));
+  // }
+  // // Get humidity event and print its value.
+  // dht.humidity().getEvent(&event);
+  // if (isnan(event.relative_humidity)) {
+  //   Serial.println(F("Error reading humidity!"));
+  // }
+  // else {
+  //   Serial.print(F("Humidity: "));
+  //   Serial.print(event.relative_humidity);
+  //   Serial.println(F("%"));
+  // }
+  // GPS ----------------------------------------------------------------------------------------------------------//
+  unsigned long currentMillis = millis();
+  while (GPSserial.available() > 0){
+    if (gps.encode(GPSserial.read())){
+      if (currentMillis - previousMillis >= interval) {
+        previousMillis = currentMillis;
+        if (gps.location.isValid()){
+          String GPSData = (String(gps.location.lat(), 6)) + "," + (String(gps.location.lng(), 6));
+          Serial.println(GPSData); // Print GPS data to serial monitor
+        }
+      }
+    }
+  }
+ 
+  // No GPS -- Check Wiring
+  // if (millis() > 5000 && gps.charsProcessed() < 10) {
+  //   Serial.println(F("No GPS detected: check wiring."));
+  //   while(true);
+  // }
+}
 
 // Custom Functions -----------------------------------------------------------------------------------------//
-void displayInfo() 
-{
+void displayInfo() {
   Serial.print(F("Location: ")); 
   if (gps.location.isValid())
   {
@@ -93,65 +148,8 @@ void smartDelay(unsigned long ms)
 {
   unsigned long start = millis();
   do {
-    while (ss.available()) {
-      gps.encode(ss.read());
+    while (GPSserial.available()) {
+      gps.encode(GPSserial.read());
     }
   } while (millis() - start < ms);
-}
-
-
-void setup() {
-  // Initialize devices
-  Serial.begin(9600); // Physical Serial
-  ss.begin(GPSBaud); // Virtual Serial
-  Wire.begin();
-  dht.begin();
-
-  // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
-  sensor_t sensor;
-
-  // Set delay between sensor readings
-  //delayMS = 1000;
-}
-
-void loop() {
-  // DHT11 ----------------------------------------------------------------------------------------------------------//
-  // Get temperature event and print its value
-  sensors_event_t event;
-
-  dht.temperature().getEvent(&event);
-  if (isnan(event.temperature)) {
-    Serial.println(F("Error reading temperature!"));
-  }
-  else {
-    Serial.print(F("Temperature: "));
-    Serial.print(event.temperature);
-    Serial.println(F("°C"));
-  }
-  // Get humidity event and print its value.
-  dht.humidity().getEvent(&event);
-  if (isnan(event.relative_humidity)) {
-    Serial.println(F("Error reading humidity!"));
-  }
-  else {
-    Serial.print(F("Humidity: "));
-    Serial.print(event.relative_humidity);
-    Serial.println(F("%"));
-  }
-  // GPS ----------------------------------------------------------------------------------------------------------//
-  while (ss.available() > 0)  {
-     if (gps.encode(ss.read()))  {
-      Serial.println("Displaying GPS Data...");
-      displayInfo();
-    }
-  }
-
-  Serial.println("Loop Completed");
-  smartDelay(1000);
-      
-  if (millis() > 5000 && gps.charsProcessed() < 10) {
-    Serial.println(F("No GPS detected: check wiring."));
-    while(true);
-  }
-
 }

@@ -15,7 +15,7 @@
 //#define DHTPIN 12
 
 // Grove GPS air 350 Module
-static const int RXPin = 4, TXPin = 3;
+static const int RXPin = 4, TXPin = 8;
 static const uint32_t GPSBaud = 9600;
 const long interval = 10000;
 unsigned long previousMillis = 0;
@@ -38,8 +38,6 @@ void setup() {
   GPSserial.begin(GPSBaud); // Virtual Serial
   //Wire.begin();
   //dht.begin();
-
-  Serial.println("Setup complete");
 
   // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
   //sensor_t sensor;
@@ -72,24 +70,24 @@ void loop() {
   //   Serial.println(F("%"));
   // }
   // GPS ----------------------------------------------------------------------------------------------------------//
+  // Feed the GPS parser as often as possible
+  while (GPSserial.available()) {
+    gps.encode(GPSserial.read());
+  }
+
+  // Print GPS info at fixed intervals 10sec
   unsigned long currentMillis = millis();
-  while (GPSserial.available() > 0){
-    if (gps.encode(GPSserial.read())){
-      if (currentMillis - previousMillis >= interval) {
-        previousMillis = currentMillis;
-        if (gps.location.isValid()){
-          String GPSData = (String(gps.location.lat(), 6)) + "," + (String(gps.location.lng(), 6));
-          Serial.println(GPSData); // Print GPS data to serial monitor
-        }
-      }
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    if (gps.location.isValid()) {
+      String GPSData = String(gps.location.lat(), 6) + "," + String(gps.location.lng(), 6);
+      Serial.println(GPSData);
+      Serial.println("GPS Data Printed");
+    } 
+    else {
+      Serial.println("Waiting for valid GPS data...");
     }
   }
- 
-  // No GPS -- Check Wiring
-  // if (millis() > 5000 && gps.charsProcessed() < 10) {
-  //   Serial.println(F("No GPS detected: check wiring."));
-  //   while(true);
-  // }
 }
 
 // Custom Functions -----------------------------------------------------------------------------------------//

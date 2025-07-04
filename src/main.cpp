@@ -2,14 +2,24 @@
 #include <inc.cpp>
 
 
-// Defining PINS------------------------------------------------------------------------//
-#define DHTPIN 12
+// Constants ------------------------------------------------------------------------//
+#define DHTPIN 12 
 
 // Grove GPS air 350 Module
 static const int RXPin = 2, TXPin = 3;
 static const uint32_t GPSBaud = 9600;
 const long interval = 10000;
 unsigned long previousMillis = 0;
+
+// Thermistor
+const int thermistorPin = A0; // Analog pin connected to thermistor-resistor voltage divider
+
+// Thermistor Constants
+const float seriesResistor = 10000.0;  // 10k Ohm series resistor
+const float nominalResistance = 10000.0; // Resistance of thermistor at 25ºC
+const float nominalTemperature = 25.0;   // Nominal temperature (ºC)
+const float betaCoefficient = 3892.0;    // Beta coefficient of the thermistor
+const float adcMax = 1023.0;             // Max value from analogRead
 
 
 // Defining Device Types ----------------------------------------------------------------//
@@ -23,7 +33,7 @@ TinyGPSPlus gps; // The TinyGPSPlus object
 SoftwareSerial GPSserial(RXPin, TXPin);
 
 // Custom Functions -----------------------------------------------------------------------------------------//
-static void displayInfo() {
+void displayInfo() {
   Serial.print(F("Location: ")); 
   if (gps.location.isValid()) {
     Serial.print(gps.location.lat(), 6);
@@ -67,13 +77,36 @@ static void displayInfo() {
 }
 
 // This custom version of delay() ensures that the gps object is being "fed"
-static void smartDelay(unsigned long ms) {
+void smartDelay(unsigned long ms) {
 	unsigned long start = millis();
 	do {
 		while (GPSserial.available()) {
 			gps.encode(GPSserial.read());
 		}
 	} while (millis() - start < ms);
+}
+
+void outTemp() {
+  int analogValue = analogRead(thermistorPin);
+
+  if (analogValue == 0) {
+    Serial.println("Outside Temp: Error - analog value is 0");
+    return;
+  }
+
+  // Convert analog reading to resistance of thermistor
+  float voltage = analogValue / adcMax; // fraction of Vcc
+  float thermistorResistance = seriesResistor * ((adcMax / analogValue) - 1);
+
+  // Calculate temperature in Kelvin using Beta formula
+  float temperatureK = 1.0 / ( (1.0 / (nominalTemperature + 273.15)) + 
+                               (1.0 / betaCoefficient) * log(thermistorResistance / nominalResistance) );
+  float temperatureC = temperatureK - 273.15;
+
+  // Output to Serial Monitor
+  Serial.print("Outside Temp: ");
+  Serial.print(temperatureC, 1); // 1 decimal place
+  Serial.println(" °C");
 }
 
 void setup() {
@@ -112,6 +145,9 @@ void loop() {
     Serial.print(event.relative_humidity);
     Serial.println(F("%"));
   }
+  // Outside Thermisistor ----------------------------------------------------------------------------------------------------------//
+  outTemp();
+
   // GPS ----------------------------------------------------------------------------------------------------------//
   // Print No. Satellites fixed
   Serial.print("Satellites: ");
@@ -123,7 +159,7 @@ void loop() {
 
   displayInfo();
 
-  smartDelay(10000);
+  smartDelay(300000);
 
   // If No data is encoded in 5s - Error
   if (millis() > 5000 && gps.charsProcessed() < 10) {

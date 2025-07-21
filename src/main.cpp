@@ -163,16 +163,6 @@ void loop() {
   displayInfo();
 
   // Transmit Data via LoRa ----------------------------------------------------------------------------------------------------//
-  if (Serial.available()) {
-    val = Serial.read();
-    LoRaSerial.print(val);
-    delay(10);
-  }
-
-  if (LoRaSerial.available()) {
-    val = LoRaSerial.read();
-    Serial.print(val);
-    delay(10);
 
   // Delay between readings ---------------------------------------------------------------------------------------------------//
   smartDelay(10);

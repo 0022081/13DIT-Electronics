@@ -21,6 +21,9 @@ const float nominalTemperature = 25.0;   // Nominal temperature (ºC)
 const float betaCoefficient = 3892.0;    // Beta coefficient of the thermistor
 const float adcMax = 1023.0;             // Max value from analogRead
 
+// LoRa Constants
+int counter = 0;
+
 
 // Defining Device Types ----------------------------------------------------------------//
 #define DHTTYPE    DHT11 
@@ -107,6 +110,11 @@ void outTemp() {
   Serial.print("Outside Temp: ");
   Serial.print(temperatureC, 1); // 1 decimal place
   Serial.println(" °C");
+}
+
+// LoRa Packet Send
+void loraSend() {
+  
 }
 
 void setup() {

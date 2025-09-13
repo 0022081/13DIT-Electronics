@@ -1,20 +1,17 @@
 // Including libraries
 #include <inc.cpp>
 
-
 // Constants ------------------------------------------------------------------------//
-#define DHTPIN 12 
+#define DHTPIN 12  // DHT11 Pin
 
-// Grove GPS air 350 Module
-static const int RXPin = 2, TXPin = 3;
-static const uint32_t GPSBaud = 9600;
-const long interval = 10000;
+// Grove GPS Constants
+static const int GPSRXPin = 2, GPSTXPin = 3;  // Serial Port
+static const uint32_t GPSBaud = 9600; // GPS Baud Rate
+const long interval = 10000;  
 unsigned long previousMillis = 0;
 
-// Thermistor
-const int thermistorPin = A0; // Analog pin connected to thermistor-resistor voltage divider
-
 // Thermistor Constants
+const int thermistorPin = A0; // Thermistor pins
 const float seriesResistor = 10000.0;  // 10k Ohm series resistor
 const float nominalResistance = 10000.0; // Resistance of thermistor at 25ºC
 const float nominalTemperature = 25.0;   // Nominal temperature (ºC)
@@ -24,16 +21,21 @@ const float adcMax = 1023.0;             // Max value from analogRead
 // LoRa Constants
 int counter = 0;
 
+// LoRa Constants
+static const int LoRaRXPin = 9, LoRaTXPin = 8; // Serial Port
+static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
+char val;
 
 // Defining Device Types ----------------------------------------------------------------//
 #define DHTTYPE    DHT11 
 
-//Define Objects ------------------------------------------------------------------------//
+// Define Objects ------------------------------------------------------------------------//
 DHT_Unified dht(DHTPIN, DHTTYPE); //Create dht object
 TinyGPSPlus gps; // The TinyGPSPlus object
 
-// The serial connection to the GPS device
-SoftwareSerial GPSserial(RXPin, TXPin);
+// Software Serials
+SoftwareSerial GPSSerial(GPSRXPin, GPSTXPin); // Serial for GPS object
+SoftwareSerial LoRaSerial(LoRaRXPin, LoRaTXPin);  // Serial for LoRa object
 
 // Custom Functions -----------------------------------------------------------------------------------------//
 void displayInfo() {
@@ -83,8 +85,8 @@ void displayInfo() {
 void smartDelay(unsigned long ms) {
 	unsigned long start = millis();
 	do {
-		while (GPSserial.available()) {
-			gps.encode(GPSserial.read());
+		while (GPSSerial.available()) {
+			gps.encode(GPSSerial.read());
 		}
 	} while (millis() - start < ms);
 }
@@ -120,7 +122,8 @@ void loraSend() {
 void setup() {
   // Initialize devices
   Serial.begin(9600); // Physical Serial
-  GPSserial.begin(GPSBaud); // Virtual Serial
+  GPSSerial.begin(GPSBaud); // GPS Virtual Serial
+  LoRaSerial.begin(LoRaBaud); // LoRa Virtual Serial
   Wire.begin();
   dht.begin();
 
@@ -167,9 +170,12 @@ void loop() {
 
   displayInfo();
 
-  smartDelay(300000);
+  // Transmit Data via LoRa ----------------------------------------------------------------------------------------------------//
 
-  // If No data is encoded in 5s - Error
+  // Delay between readings ---------------------------------------------------------------------------------------------------//
+  smartDelay(10);
+
+  // If No data is encoded to GPS module in 5s = Error
   if (millis() > 5000 && gps.charsProcessed() < 10) {
 		Serial.println(F("No GPS data received: check wiring"));
 	}

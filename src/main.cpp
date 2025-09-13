@@ -19,6 +19,9 @@ const float betaCoefficient = 3892.0;    // Beta coefficient of the thermistor
 const float adcMax = 1023.0;             // Max value from analogRead
 
 // LoRa Constants
+int counter = 0;
+
+// LoRa Constants
 static const int LoRaRXPin = 9, LoRaTXPin = 8; // Serial Port
 static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
 char val;
@@ -109,6 +112,11 @@ void outTemp() {
   Serial.print("Outside Temp: ");
   Serial.print(temperatureC, 1); // 1 decimal place
   Serial.println(" °C");
+}
+
+// LoRa Packet Send
+void loraSend() {
+  
 }
 
 void setup() {

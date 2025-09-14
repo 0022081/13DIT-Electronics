@@ -35,6 +35,7 @@ static const int LoRaRXPin = 9, LoRaTXPin = 8; // Serial Port
 static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
 char val;
 
+// Sending Data constants
 float insideTemp; 
 float insideHum;
 float gpsLat;
@@ -44,11 +45,11 @@ float outsideTemp;
 
 // Defining Device Types ----------------------------------------------------------------//
 #define DHTTYPE    DHT11 
+#define LORA_SERIAL Serial1
 
 // Define Objects ------------------------------------------------------------------------//
 DHT_Unified dht(DHTPIN, DHTTYPE); //Create dht object
 TinyGPSPlus gps; // The TinyGPSPlus object
-SX1262 lora = new Module(10, 2, 9, 3);// LoRa object - Parameters: NSS pin, DIO1 pin, NRST pin, BUSY pin
 
 // Software Serials
 SoftwareSerial GPSSerial(GPSRXPin, GPSTXPin); // Serial for GPS object
@@ -198,25 +199,17 @@ float soilData() {
   return moisturePct;
 }
 
-void sendLoRaData(float insideTemp, float insideHum, float latitude, float longitude, float soilMoisture, float outsideTemp) {
-  // Build payload string
-  String payload = "InTemp=" + String(insideTemp, 1) + "C"
-                 + ",InHum=" + String(insideHum, 1) + "%"
-                 + ",Lat=" + String(latitude, 6)
-                 + ",Lon=" + String(longitude, 6)
-                 + ",Soil=" + String(soilMoisture, 1) + "%"
-                 + ",OutTemp=" + String(outsideTemp, 1) + "C";
+void sendLoRaData(String payload, unsigned long wait = 500) {
+  LORA_SERIAL.println(payload);
+  delay(wait);
 
-  int state = lora.transmit(payload); // Send test message
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println("success!");
-  } else if (state == RADIOLIB_ERR_PACKET_TOO_LONG) {
-    Serial.println("packet too long!");
-  } else if (state == RADIOLIB_ERR_TX_TIMEOUT) {
-    Serial.println("timeout!");
-  } else {
-    Serial.print("failed, code ");
-    Serial.println(state);
+  // Read back any response from module
+  while (LORA_SERIAL.available()) {
+    String resp = LORA_SERIAL.readStringUntil('\n');
+    resp.trim();
+    if (resp.length() > 0) {
+      Serial.print("<< "); Serial.println(resp);
+    }
   }
 }
 
@@ -232,15 +225,17 @@ void setup() {
 
   while (!Serial);
   // Initialize LoRa at 915 MHz (NZ band) --------------------------------------------------------------------------------//
-  Serial.println("[SX1262] Initialising ...");
-  int state = lora.begin(915.0);
-  if (state == RADIOLIB_ERR_NONE) {
-    Serial.println("Radio init success!");
-  } else {
-    Serial.print("Radio init failed, code ");
-    Serial.println(state);
-    while (true);
-  }
+  LORA_SERIAL.begin(9600); // RA-08H default baud is 9600
+  delay(2000);
+  Serial.println("Configuring RA-08H LoRa module...");
+  sendLoRaData("AT+CGSN?");// Query firmware just to check connection
+  sendLoRaData("AT+MODE=0");// Set LoRa mode
+  sendLoRaData("AT+FREQ=915000000");// Set frequency to 915 MHz
+  // Set LoRa parameters:
+  // AT+PARAMETER=<SpreadFactor>,<Bandwidth>,<CodingRate>,<PreambleLength>
+  // SpreadFactor 12, BW=7 (125kHz), CR=1 (4/5), Preamble=8
+  sendLoRaData("AT+PARAMETER=12,7,1,8");
+  Serial.println("LoRa Module Configured");
 
   pinMode(sensorPin, INPUT);
 }
@@ -270,7 +265,19 @@ void loop() {
   }
 
   // Transmit Data via LoRa ----------------------------------------------------------------------------------------------------//
-  sendLoRaData(insideTemp, insideHum, gpsLat, gpsLon, soilMoisture, outsideTemp);
+  // Build payload string
+  String payload = "InTemp=" + String(insideTemp, 1) + "C"
+                 + ",InHum=" + String(insideHum, 1) + "%"
+                 + ",Lat=" + String(gpsLat, 6)
+                 + ",Lon=" + String(gpsLon, 6)
+                 + ",Soil=" + String(soilMoisture, 1) + "%"
+                 + ",OutTemp=" + String(outsideTemp, 1) + "C";
+  
+  Serial.println(payload);
+  // Add AT send function to Payload string
+  String cmd = "AT+SEND=" + String(payload.length()) + "," + payload;
+  sendLoRaData(cmd, 2000);
+
   // Delay between readings ---------------------------------------------------------------------------------------------------//
   smartDelay(10);
 

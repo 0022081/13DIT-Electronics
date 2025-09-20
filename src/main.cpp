@@ -33,7 +33,6 @@ float smoothedFreq = 0.0;
 // LoRa Constants
 static const int LoRaRXPin = 9, LoRaTXPin = 8; // Serial Port
 static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
-char val;
 
 // Sending Data constants
 float insideTemp; 
@@ -95,6 +94,16 @@ void gpsData() {
     Serial.print(gps.time.centisecond());
   } else  {
     Serial.print(F("INVALID"));
+  }
+
+  Serial.println();
+
+  // Print No. Satellites fixed
+  Serial.print("Satellites: ");
+  if (gps.satellites.isValid()) {
+   Serial.println(gps.satellites.value());
+  } else {
+    Serial.println("INVALID");
   }
 
   Serial.println();
@@ -224,6 +233,7 @@ void setup() {
   sensor_t sensor;
 
   while (!Serial);
+  
   // Initialize LoRa at 915 MHz (NZ band) --------------------------------------------------------------------------------//
   LORA_SERIAL.begin(9600); // RA-08H default baud is 9600
   delay(2000);
@@ -245,17 +255,9 @@ void loop() {
   insideDht();
   // Outside Thermisistor ----------------------------------------------------------------------------------------------------------//
   outTemp();
-
   // Get GPS Data --------------------------------------------------------------------------------------------------------------//
   gpsData();
-  // Print No. Satellites fixed
-  Serial.print("Satellites: ");
-  if (gps.satellites.isValid()) {
-   Serial.println(gps.satellites.value());
-  } else {
-    Serial.println("INVALID");
-  }
-
+  
   // Soil moisture Data --------------------------------------------------------------------------------------------------------//
   float soilMoisture = soilData(); // Call your function
 

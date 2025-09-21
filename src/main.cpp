@@ -210,6 +210,7 @@ float soilData() {
 
 void sendLoRaData(String payload, unsigned long wait = 500) {
   LORA_SERIAL.println(payload);
+  Serial.println("Payload sent");
   delay(wait);
 
   // Read back any response from module
@@ -243,8 +244,8 @@ void setup() {
   sendLoRaData("AT+FREQ=915000000");// Set frequency to 915 MHz
   // Set LoRa parameters:
   // AT+PARAMETER=<SpreadFactor>,<Bandwidth>,<CodingRate>,<PreambleLength>
-  // SpreadFactor 12, BW=7 (125kHz), CR=1 (4/5), Preamble=8
-  sendLoRaData("AT+PARAMETER=12,7,1,8");
+  // SpreadFactor 7, BW=7 (125kHz), CR=1 (4/5), Preamble=8
+  sendLoRaData("AT+PARAMETER=7,7,1,8");
   Serial.println("LoRa Module Configured");
 
   pinMode(sensorPin, INPUT);
@@ -275,7 +276,6 @@ void loop() {
                  + ",Soil=" + String(soilMoisture, 1) + "%"
                  + ",OutTemp=" + String(outsideTemp, 1) + "C";
   
-  Serial.println(payload);
   // Add AT send function to Payload string
   String cmd = "AT+SEND=" + String(payload.length()) + "," + payload;
   sendLoRaData(cmd, 2000);

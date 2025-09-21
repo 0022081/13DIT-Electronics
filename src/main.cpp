@@ -128,7 +128,6 @@ void outTemp() {
   }
 
   // Convert analog reading to resistance of thermistor
-  float voltage = analogValue / adcMax; // fraction of Vcc
   float thermistorResistance = seriesResistor * ((adcMax / analogValue) - 1);
 
   // Calculate temperature in Kelvin using Beta formula
@@ -221,6 +220,9 @@ void sendLoRaData(String payload, unsigned long wait = 500) {
       Serial.print("<< "); Serial.println(resp);
     }
   }
+  if (!LORA_SERIAL.available()) {
+    Serial.println("LORA_SERIAL not available!");
+  }
 }
 
 void setup() {
@@ -263,8 +265,7 @@ void loop() {
   float soilMoisture = soilData(); // Call your function
 
   if (soilMoisture >= 0.0) {
-    Serial.print("Moisture % (usable value): ");
-    Serial.println(soilMoisture, 1);
+    Serial.print("Moisture % (usable value): " + (soilMoisture, 1));
   }
 
   // Transmit Data via LoRa ----------------------------------------------------------------------------------------------------//

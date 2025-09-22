@@ -5,12 +5,12 @@
 #define DHTPIN 12  // DHT11 Pin
 
 // Grove GPS Constants
-static const int GPSRXPin = 2, GPSTXPin = 3;  // Serial Port
+static const int GPSRXPin = 2, GPSTXPin = 4;  // Serial Port
 static const uint32_t GPSBaud = 9600; // GPS Baud Rate
 const long interval = 10000;  
 unsigned long previousMillis = 0;
 
-// Thermistor Constants
+// Thermistor Constants ------------------------------------------------------------------//
 const int thermistorPin = A0; // Thermistor pins
 const float seriesResistor = 10000.0;  // 10k Ohm series resistor
 const float nominalResistance = 10000.0; // Resistance of thermistor at 25ºC
@@ -18,11 +18,13 @@ const float nominalTemperature = 25.0;   // Nominal temperature (ºC)
 const float betaCoefficient = 3892.0;    // Beta coefficient of the thermistor
 const float adcMax = 1023.0;             // Max value from analogRead
 
-// Soil Data Constants
-const uint8_t sensorPin = 2;    // digital input from TLC555 pin3
-const unsigned long pulseTimeout = 300000UL; // µs (300 ms) timeout for pulseIn
+// Soil Data Constants ------------------------------------------------------------------//
+const uint8_t sensorPin = 3;    // digital input from TLC555 pin3
+volatile unsigned long pulseCount = 0;
+unsigned long measureWindowMs = 100; // measurement window in ms (try 50..200)
+unsigned long lastMeasureMillis = 0;
 
-// Calibration values (replace with measured values for your soil probe)
+// Calibration
 float dryFreq = 95000.0;   // Hz when dry
 float wetFreq = 45000.0;   // Hz when saturated
 
@@ -30,7 +32,7 @@ float wetFreq = 45000.0;   // Hz when saturated
 const float alpha = 0.2;
 float smoothedFreq = 0.0;
 
-// LoRa Constants
+// LoRa Constants ------------------------------------------------------------------------//
 static const int LoRaRXPin = 9, LoRaTXPin = 8; // Serial Port
 static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
 
@@ -52,6 +54,10 @@ TinyGPSPlus gps; // The TinyGPSPlus object
 
 // Software Serials
 SoftwareSerial GPSSerial(GPSRXPin, GPSTXPin); // Serial for GPS object
+
+void onPulse() {
+  pulseCount++;
+}
 
 // Custom Functions -----------------------------------------------------------------------------------------//
 void gpsData() {
@@ -171,40 +177,42 @@ void insideDht() {
 }
 
 float soilData() {
-  // Measure HIGH and LOW pulse times
-  unsigned long highUs = pulseIn(sensorPin, HIGH, pulseTimeout);
-  unsigned long lowUs  = pulseIn(sensorPin, LOW,  pulseTimeout);
+  unsigned long now = millis();
+  static float lastMoisture = -1.0;
 
-  // Timeout guard
-  if (highUs == 0 || lowUs == 0) {
-    Serial.println("No valid pulses (timeout). Check wiring or sensor power.");
-    return -1.0; // return invalid value
+  if (now - lastMeasureMillis >= measureWindowMs) {
+    // Safely grab count
+    detachInterrupt(digitalPinToInterrupt(sensorPin));
+    unsigned long count = pulseCount;
+    pulseCount = 0;
+    attachInterrupt(digitalPinToInterrupt(sensorPin), onPulse, RISING);
+
+    float windowSec = (now - lastMeasureMillis) / 1000.0f;
+    float freqHz = (windowSec > 0) ? (count / windowSec) : 0.0f;
+
+    // Smoothing
+    if (smoothedFreq == 0.0f) smoothedFreq = freqHz;
+    smoothedFreq = alpha * freqHz + (1.0f - alpha) * smoothedFreq;
+
+    // Map to moisture %
+    float moisturePct = (dryFreq != wetFreq) ?
+      (smoothedFreq - dryFreq) / (wetFreq - dryFreq) * 100.0f : 0.0f;
+
+    // Clamp
+    if (moisturePct < 0.0f) moisturePct = 0.0f;
+    if (moisturePct > 100.0f) moisturePct = 100.0f;
+
+    // Debug output
+    Serial.print("Count: "); Serial.print(count);
+    Serial.print(" | Freq: "); Serial.print(freqHz, 1);
+    Serial.print(" Hz (smoothed: "); Serial.print(smoothedFreq, 1); Serial.print(")");
+    Serial.print(" | Moisture: "); Serial.print(moisturePct, 1); Serial.println(" %");
+
+    lastMoisture = moisturePct;
+    lastMeasureMillis = now;
   }
 
-  unsigned long periodUs = highUs + lowUs;
-  float freqHz = (periodUs > 0) ? (1000000.0f / (float)periodUs) : 0.0f;
-
-  // Initialize smoothing
-  if (smoothedFreq == 0.0f) smoothedFreq = freqHz;
-  smoothedFreq = alpha * freqHz + (1.0f - alpha) * smoothedFreq;
-
-  // Map frequency to % moisture
-  float moisturePct = (dryFreq != wetFreq) ?
-    (smoothedFreq - dryFreq) / (wetFreq - dryFreq) * 100.0f : 0.0f;
-
-  // Clamp
-  if (moisturePct < 0.0f) moisturePct = 0.0f;
-  if (moisturePct > 100.0f) moisturePct = 100.0f;
-
-  // Debug print
-  Serial.print("HIGH_us: "); Serial.print(highUs);
-  Serial.print(" | LOW_us: "); Serial.print(lowUs);
-  Serial.print(" | Period_us: "); Serial.print(periodUs);
-  Serial.print(" | Freq: "); Serial.print(freqHz, 1);
-  Serial.print(" Hz (smoothed: "); Serial.print(smoothedFreq, 1); Serial.print(" Hz)");
-  Serial.print(" | Moisture: "); Serial.print(moisturePct, 1); Serial.println(" %");
-
-  return moisturePct;
+  return lastMoisture; // return last valid measurement
 }
 
 void sendLoRaData(String payload, unsigned long wait = 500) {
@@ -236,6 +244,13 @@ void setup() {
   sensor_t sensor;
 
   while (!Serial);
+
+  // Soil Sensor set up --------------------------------------------------------------------------------//
+  pinMode(sensorPin, INPUT);
+  attachInterrupt(digitalPinToInterrupt(sensorPin), onPulse, RISING);
+
+  lastMeasureMillis = millis();
+  Serial.println("TLC555 Soil Moisture (Interrupt-based)");
   
   // Initialize LoRa at 915 MHz (NZ band) --------------------------------------------------------------------------------//
   LORA_SERIAL.begin(9600); // RA-08H default baud is 9600
@@ -249,24 +264,19 @@ void setup() {
   // SpreadFactor 7, BW=7 (125kHz), CR=1 (4/5), Preamble=8
   sendLoRaData("AT+PARAMETER=7,7,1,8");
   Serial.println("LoRa Module Configured");
-
-  pinMode(sensorPin, INPUT);
 }
 
 void loop() {
+  // Soil moisture Data --------------------------------------------------------------------------------------------------------//
+  float soilMoisture = soilData(); // Call your function
+  Serial.println(soilMoisture, 1);
+
   // Inside Temp & Humidity ----------------------------------------------------------------------------------------------------------//
   insideDht();
   // Outside Thermisistor ----------------------------------------------------------------------------------------------------------//
   outTemp();
   // Get GPS Data --------------------------------------------------------------------------------------------------------------//
   gpsData();
-  
-  // Soil moisture Data --------------------------------------------------------------------------------------------------------//
-  float soilMoisture = soilData(); // Call your function
-
-  if (soilMoisture >= 0.0) {
-    Serial.print("Moisture % (usable value): " + (soilMoisture, 1));
-  }
 
   // Transmit Data via LoRa ----------------------------------------------------------------------------------------------------//
   // Build payload string

@@ -1,7 +1,7 @@
 // Including libraries
 #include <header.h>
 
-// Constants ------------------------------------------------------------------------//
+// Constants ---------------------------------------------------------------------------//
 #define DHTPIN 12  // DHT11 Pin
 
 // Grove GPS Constants

@@ -33,7 +33,7 @@ const float alpha = 0.2;
 float smoothedFreq = 0.0;
 
 // LoRa Constants ------------------------------------------------------------------------//
-static const int LoRaRXPin = 9, LoRaTXPin = 8; // Serial Port
+#define LORA_SERIAL Serial1 // Serial Port
 static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
 
 // Sending Data constants
@@ -46,7 +46,6 @@ float outsideTemp;
 
 // Defining Device Types ----------------------------------------------------------------//
 #define DHTTYPE    DHT11 
-#define LORA_SERIAL Serial1
 
 // Define Objects ------------------------------------------------------------------------//
 DHT_Unified dht(DHTPIN, DHTTYPE); //Create dht object
@@ -215,12 +214,14 @@ float soilData() {
   return lastMoisture; // return last valid measurement
 }
 
-void sendLoRaData(String payload, unsigned long wait = 500) {
-  LORA_SERIAL.println(payload);
-  Serial.println("Payload sent");
+void sendLoRaAT(const String& cmd, unsigned long wait = 500) {
+  LORA_SERIAL.println(cmd);
+  Serial.print(">> "); Serial.println(cmd);
+
+  // Give module time to respond
   delay(wait);
 
-  // Read back any response from module
+  // Optional: check response
   while (LORA_SERIAL.available()) {
     String resp = LORA_SERIAL.readStringUntil('\n');
     resp.trim();
@@ -228,8 +229,26 @@ void sendLoRaData(String payload, unsigned long wait = 500) {
       Serial.print("<< "); Serial.println(resp);
     }
   }
-  if (!LORA_SERIAL.available()) {
-    Serial.println("LORA_SERIAL not available!");
+}
+
+void sendLoRaData(const String& payload, unsigned long wait = 2000) {
+  // Build AT command with length and payload
+  String cmd = "AT+DTRX=1,2," + String(payload.length()) + "," + payload;
+
+  // Send to RA-08H
+  LORA_SERIAL.println(cmd);
+  Serial.print(">> "); Serial.println(cmd);
+
+  // Give module time to respond
+  delay(wait);
+
+  // Optional: check response
+  while (LORA_SERIAL.available()) {
+    String resp = LORA_SERIAL.readStringUntil('\n');
+    resp.trim();
+    if (resp.length() > 0) {
+      Serial.print("<< "); Serial.println(resp);
+    }
   }
 }
 
@@ -256,13 +275,14 @@ void setup() {
   LORA_SERIAL.begin(9600); // RA-08H default baud is 9600
   delay(2000);
   Serial.println("Configuring RA-08H LoRa module...");
-  sendLoRaData("AT+CGSN?");// Query firmware just to check connection
-  sendLoRaData("AT+MODE=0");// Set LoRa mode
-  sendLoRaData("AT+FREQ=915000000");// Set frequency to 915 MHz
-  // Set LoRa parameters:
-  // AT+PARAMETER=<SpreadFactor>,<Bandwidth>,<CodingRate>,<PreambleLength>
-  // SpreadFactor 7, BW=7 (125kHz), CR=1 (4/5), Preamble=8
-  sendLoRaData("AT+PARAMETER=7,7,1,8");
+  sendLoRaAT("AT+CGSN?");
+
+  sendLoRaAT("AT+CFREQBANDMASK=0002");      // set 915MHz Frequency
+  sendLoRaAT("AT+CTXP=1");                  // TX power 15 dBm
+  
+  // Change to correct format
+  sendLoRaAT("AT+CSF=7");                   // spreading factor 7
+  sendLoRaAT("AT+CBW=125");                 // bandwidth 125 kHz
   Serial.println("LoRa Module Configured");
 }
 
@@ -288,8 +308,7 @@ void loop() {
                  + ",OutTemp=" + String(outsideTemp, 1) + "C";
   
   // Add AT send function to Payload string
-  String cmd = "AT+SEND=" + String(payload.length()) + "," + payload;
-  sendLoRaData(cmd, 2000);
+  sendLoRaData(payload, 2000);
 
   // Delay between readings ---------------------------------------------------------------------------------------------------//
   smartDelay(10);

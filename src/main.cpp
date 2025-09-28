@@ -16,21 +16,18 @@ const float seriesResistor = 10000.0;  // 10k Ohm series resistor
 const float nominalResistance = 10000.0; // Resistance of thermistor at 25ºC
 const float nominalTemperature = 25.0;   // Nominal temperature (ºC)
 const float betaCoefficient = 3892.0;    // Beta coefficient of the thermistor
-const float adcMax = 1023.0;             // Max value from analogRead
+const float adcMax = 4095.0;             // Max value from analogRead
 
 // Soil Data Constants ------------------------------------------------------------------//
-const uint8_t sensorPin = 3;    // digital input from TLC555 pin3
-volatile unsigned long pulseCount = 0;
-unsigned long measureWindowMs = 100; // measurement window in ms (try 50..200)
-unsigned long lastMeasureMillis = 0;
+const uint8_t soilPin = A1;        // analog pin for envelope node
+const int ADC_BITS = 12;           // Uno R4 Minima ADC
+int ADC_MAX = (1 << ADC_BITS) - 1;
 
-// Calibration
-float dryFreq = 95000.0;   // Hz when dry
-float wetFreq = 45000.0;   // Hz when saturated
+float soilAlpha = 0.15f;           // EMA smoothing factor
+float soilSmoothed = 0.0f;
 
-// Smoothing
-const float alpha = 0.2;
-float smoothedFreq = 0.0;
+int soilDryADC = -1;               // calibration (dry)
+int soilWetADC = -1;               // calibration (wet)
 
 // LoRa Constants ------------------------------------------------------------------------//
 #define LORA_SERIAL Serial1 // Serial Port
@@ -54,12 +51,22 @@ TinyGPSPlus gps; // The TinyGPSPlus object
 // Software Serials
 SoftwareSerial GPSSerial(GPSRXPin, GPSTXPin); // Serial for GPS object
 
-void onPulse() {
-  pulseCount++;
+// Custom Functions -----------------------------------------------------------------------------------------//
+void saveCalibration() {  // Save SMS dry/wet values
+  EEPROM.put(0, soilDryADC);
+  EEPROM.put(sizeof(int), soilWetADC);
 }
 
-// Custom Functions -----------------------------------------------------------------------------------------//
-void gpsData() {
+void loadCalibration() {  // Load previouse SMS dry/wet values
+  EEPROM.get(0, soilDryADC);
+  EEPROM.get(sizeof(int), soilWetADC);
+}
+
+float mapFloat(float x, float in_min, float in_max, float out_min, float out_max){  // Map
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+void gpsData() {  // GPS location data
   Serial.print(F("Location: ")); 
   if (gps.location.isValid()) {
     gpsLat = (gps.location.lat());
@@ -114,8 +121,7 @@ void gpsData() {
   Serial.println();
 }
 
-// Ensures that the gps object is being "fed"
-void smartDelay(unsigned long ms) {
+void smartDelay(unsigned long ms) { // Smart delay for GPS (constant feeding)
 	unsigned long start = millis();
 	do {
 		while (GPSSerial.available()) {
@@ -124,7 +130,7 @@ void smartDelay(unsigned long ms) {
 	} while (millis() - start < ms);
 }
 
-void outTemp() {
+void outTemp() {  // Outside thermistor 
   int analogValue = analogRead(thermistorPin);
 
   if (analogValue == 0) {
@@ -147,7 +153,7 @@ void outTemp() {
   outsideTemp = temperatureC;
 }
 
-void insideDht() {
+void insideDht() {  // Inside DHT11 sensor
   // DHT11 ----------------------------------------------------------------------------------------------------------//
   // Get temperature event and print its value
   sensors_event_t event;
@@ -175,46 +181,35 @@ void insideDht() {
   }
 }
 
-float soilData() {
-  unsigned long now = millis();
-  static float lastMoisture = -1.0;
+float soilData() {  // SMS data
+  int raw = analogRead(soilPin);
+  Serial.print("Soil raw: "); Serial.println(raw);
 
-  if (now - lastMeasureMillis >= measureWindowMs) {
-    // Safely grab count
-    detachInterrupt(digitalPinToInterrupt(sensorPin));
-    unsigned long count = pulseCount;
-    pulseCount = 0;
-    attachInterrupt(digitalPinToInterrupt(sensorPin), onPulse, RISING);
+  if (soilSmoothed == 0.0f) soilSmoothed = raw;
+  soilSmoothed = soilAlpha * raw + (1.0f - soilAlpha) * soilSmoothed;
 
-    float windowSec = (now - lastMeasureMillis) / 1000.0f;
-    float freqHz = (windowSec > 0) ? (count / windowSec) : 0.0f;
-
-    // Smoothing
-    if (smoothedFreq == 0.0f) smoothedFreq = freqHz;
-    smoothedFreq = alpha * freqHz + (1.0f - alpha) * smoothedFreq;
-
-    // Map to moisture %
-    float moisturePct = (dryFreq != wetFreq) ?
-      (smoothedFreq - dryFreq) / (wetFreq - dryFreq) * 100.0f : 0.0f;
-
-    // Clamp
-    if (moisturePct < 0.0f) moisturePct = 0.0f;
-    if (moisturePct > 100.0f) moisturePct = 100.0f;
-
-    // Debug output
-    Serial.print("Count: "); Serial.print(count);
-    Serial.print(" | Freq: "); Serial.print(freqHz, 1);
-    Serial.print(" Hz (smoothed: "); Serial.print(smoothedFreq, 1); Serial.print(")");
-    Serial.print(" | Moisture: "); Serial.print(moisturePct, 1); Serial.println(" %");
-
-    lastMoisture = moisturePct;
-    lastMeasureMillis = now;
+  if (soilDryADC >= 0 && soilWetADC >= 0 && soilDryADC != soilWetADC) {
+    // Map regardless of whether wetADC > dryADC or not
+    float pct = mapFloat(soilSmoothed, soilDryADC, soilWetADC, 0.0f, 100.0f);
+    if (pct < 0.0f) pct = 0.0f;
+    if (pct > 100.0f) pct = 100.0f;
+    return pct;
+  } else {
+    return -1.0f;  // not calibrated yet
   }
-
-  return lastMoisture; // return last valid measurement
 }
 
-void sendLoRaAT(const String& cmd, unsigned long wait = 500) {
+void setSoilDry() {
+  soilDryADC = analogRead(soilPin);
+  Serial.print("Dry calibration set: "); Serial.println(soilDryADC);
+}
+
+void setSoilWet() {
+  soilWetADC = analogRead(soilPin);
+  Serial.print("Wet calibration set: "); Serial.println(soilWetADC);
+}
+
+void sendLoRaAT(const String& cmd, unsigned long wait = 500) {  // Send initial LoRa AT commands (setup)
   LORA_SERIAL.println(cmd);
   Serial.print(">> "); Serial.println(cmd);
 
@@ -231,9 +226,9 @@ void sendLoRaAT(const String& cmd, unsigned long wait = 500) {
   }
 }
 
-void sendLoRaData(const String& payload, unsigned long wait = 2000) {
+void sendLoRaData(const String& payload, unsigned long wait = 2000) { // Send data via LoRa
   // Build AT command with length and payload
-  String cmd = "AT+DTRX=1,2," + String(payload.length()) + "," + payload;
+  String cmd = "AT+SEND " + String(payload.length()) + "," + payload;
 
   // Send to RA-08H
   LORA_SERIAL.println(cmd);
@@ -265,31 +260,45 @@ void setup() {
   while (!Serial);
 
   // Soil Sensor set up --------------------------------------------------------------------------------//
-  pinMode(sensorPin, INPUT);
-  attachInterrupt(digitalPinToInterrupt(sensorPin), onPulse, RISING);
+  // Set ADC resolution explicitly for R4 Minima
+  #if defined(analogReadResolution)
+    analogReadResolution(ADC_BITS);
+  #endif
+  pinMode(soilPin, INPUT);
 
-  lastMeasureMillis = millis();
-  Serial.println("TLC555 Soil Moisture (Interrupt-based)");
+  loadCalibration(); // Load saved wet and dry moisture values
   
   // Initialize LoRa at 915 MHz (NZ band) --------------------------------------------------------------------------------//
   LORA_SERIAL.begin(9600); // RA-08H default baud is 9600
   delay(2000);
   Serial.println("Configuring RA-08H LoRa module...");
-  sendLoRaAT("AT+CGSN?");
-
-  sendLoRaAT("AT+CFREQBANDMASK=0002");      // set 915MHz Frequency
-  sendLoRaAT("AT+CTXP=1");                  // TX power 15 dBm
+  sendLoRaAT("AT+CJOIN=1,0, 10,8");
   
-  // Change to correct format
-  sendLoRaAT("AT+CSF=7");                   // spreading factor 7
-  sendLoRaAT("AT+CBW=125");                 // bandwidth 125 kHz
   Serial.println("LoRa Module Configured");
 }
 
 void loop() {
   // Soil moisture Data --------------------------------------------------------------------------------------------------------//
-  float soilMoisture = soilData(); // Call your function
-  Serial.println(soilMoisture, 1);
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == 'd' || c == 'D') {
+      setSoilDry();
+      saveCalibration();
+    } else if (c == 'w' || c == 'W') {
+      setSoilWet();
+      saveCalibration();
+    }
+  }
+  
+  float soilMoisture = soilData();
+
+  if (soilMoisture >= 0.0f) {
+    Serial.print("Moisture: ");
+    Serial.print(soilMoisture, 1);
+    Serial.println(" %");
+  } else {
+    Serial.println("Moisture: UNCALIBRATED");
+  }
 
   // Inside Temp & Humidity ----------------------------------------------------------------------------------------------------------//
   insideDht();

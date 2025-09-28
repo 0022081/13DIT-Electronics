@@ -10,3 +10,4 @@
 #include <SoftwareSerial.h> // Virtual Serial for GPS
 #include <RadioLib.h>
 #include <EEPROM.h>
+#include <SPI.h>

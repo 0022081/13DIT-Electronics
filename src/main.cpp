@@ -31,6 +31,7 @@ int soilWetADC = -1;               // calibration (wet)
 
 // LoRa Constants ------------------------------------------------------------------------//
 #define LORA_SERIAL Serial1 // Serial Port
+
 static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
 
 // Sending Data constants

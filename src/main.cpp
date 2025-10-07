@@ -11,16 +11,16 @@ const long interval = 10000;
 unsigned long previousMillis = 0;
 
 // Thermistor Constants ------------------------------------------------------------------//
-const int thermistorPin = A0; // Thermistor pins
+const int thermistorPin = A2; // Thermistor pins
 const float seriesResistor = 10000.0;  // 10k Ohm series resistor
 const float nominalResistance = 10000.0; // Resistance of thermistor at 25ºC
 const float nominalTemperature = 25.0;   // Nominal temperature (ºC)
 const float betaCoefficient = 3892.0;    // Beta coefficient of the thermistor
-const float adcMax = 4095.0;             // Max value from analogRead
+const float VREF = 3.26f;                  // ADC reference (3.3V)
 
 // Soil Data Constants ------------------------------------------------------------------//
 const uint8_t soilPin = A1;        // analog pin for envelope node
-const int ADC_BITS = 12;           // Uno R4 Minima ADC
+const int ADC_BITS = 14;           // Uno R4 Minima ADC
 int ADC_MAX = (1 << ADC_BITS) - 1;
 
 float soilAlpha = 0.15f;           // EMA smoothing factor
@@ -131,27 +131,28 @@ void smartDelay(unsigned long ms) { // Smart delay for GPS (constant feeding)
 	} while (millis() - start < ms);
 }
 
-void outTemp() {  // Outside thermistor 
-  int analogValue = analogRead(thermistorPin);
+float outTemp() {
+  int adc = analogRead(thermistorPin);               // 0..4095
+  if (adc <= 0) return -273.15f;                     // avoid div by zero, return nonsense cold
+  if (adc >= ADC_MAX) return 150.0f;                  // sensor saturated; return large temp (or handle differently)
 
-  if (analogValue == 0) {
-    Serial.println("Outside Temp: Error - analog value is 0");
-    return;
-  }
+  float vout = (float)adc / (float)ADC_MAX * VREF;  // convert ADC to voltage (Vout)
 
-  // Convert analog reading to resistance of thermistor
-  float thermistorResistance = seriesResistor * ((adcMax / analogValue) - 1);
+  float denom = (VREF - vout);
+  if (denom <= 0.0f) return 150.0f;                  // safety check: denominator must be >0
+  float rTherm = seriesResistor * (vout / denom);   // compute thermistor resistance (R_therm)
 
-  // Calculate temperature in Kelvin using Beta formula
-  float temperatureK = 1.0 / ( (1.0 / (nominalTemperature + 273.15)) + 
-                               (1.0 / betaCoefficient) * log(thermistorResistance / nominalResistance) );
-  float temperatureC = temperatureK - 273.15;
+  // compute temperature using Beta equation
+  float t0 = nominalTemperature + 273.15f;           // T0 in Kelvin
+  float invT = (1.0f / t0) + (1.0f / betaCoefficient) * log(rTherm / nominalResistance);
+  if (invT <= 0.0f) return -273.15f;                 // safety
+  float tKelvin = 1.0f / invT;
 
-  // Output to Serial Monitor
-  Serial.print("Outside Temp: ");
-  Serial.print(temperatureC, 1); // 1 decimal place
-  Serial.println(" °C");
-  outsideTemp = temperatureC;
+  // convert to Celsius
+  float tempC = tKelvin - 273.15f;
+  Serial.print("Out Temp: ");
+  Serial.print(tempC, 2);
+  return tempC;
 }
 
 void insideDht() {  // Inside DHT11 sensor
@@ -255,6 +256,8 @@ void setup() {
   Wire.begin();
   dht.begin();
 
+   analogReadResolution(ADC_BITS); // Set analog read resolution to 14 bits
+
   // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
   sensor_t sensor;
 
@@ -304,7 +307,7 @@ void loop() {
   // Inside Temp & Humidity ----------------------------------------------------------------------------------------------------------//
   insideDht();
   // Outside Thermisistor ----------------------------------------------------------------------------------------------------------//
-  outTemp();
+  outsideTemp = outTemp();
   // Get GPS Data --------------------------------------------------------------------------------------------------------------//
   gpsData();
 

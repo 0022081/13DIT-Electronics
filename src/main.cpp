@@ -230,7 +230,7 @@ void sendLoRaAT(const String& cmd, unsigned long wait = 500) {  // Send initial 
 
 void sendLoRaData(const String& payload, unsigned long wait = 2000) { // Send data via LoRa
   // Build AT command with length and payload
-  String cmd = "AT+SEND " + String(payload.length()) + "," + payload;
+  String cmd = "AT+DTRX=1,2," + String(payload.length()) + "," + payload;
 
   // Send to RA-08H
   LORA_SERIAL.println(cmd);
@@ -276,8 +276,18 @@ void setup() {
   LORA_SERIAL.begin(9600); // RA-08H default baud is 9600
   delay(2000);
   Serial.println("Configuring RA-08H LoRa module...");
+  sendLoRaAT("AT");                         // Test module
+  sendLoRaAT("AT+GMR");                     // Get version
+  sendLoRaAT("AT+RESTORE");                 // Factory Reset
+  sendLoRaAT("AT+CGBR=9600");               // Set UART Baud rate
+  sendLoRaAT("AT+CJOINMODE=0");             // Set ABP join mode
+  sendLoRaAT("AT+CDEVADDR?");               // Dev address
+  sendLoRaAT("AT+CAPPSKEY?");               // AppSkey
+  sendLoRaAT("AT+CNWKSKEY?");               // NWKSkey
+  sendLoRaAT("AT+CFREQBANDMASK=0001");      // set fequency band
+  sendLoRaAT("AT+CULDLMODE=2");             // Set join same/different frequency
+  sendLoRaAT("AT+CCLASS=0");                // Set class to A
   sendLoRaAT("AT+CJOIN=1,0, 10,8");
-  
   Serial.println("LoRa Module Configured");
 }
 

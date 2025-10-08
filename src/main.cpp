@@ -152,6 +152,7 @@ float outTemp() {
   float tempC = tKelvin - 273.15f;
   Serial.print("Out Temp: ");
   Serial.print(tempC, 2);
+  Serial.println("");
   return tempC;
 }
 

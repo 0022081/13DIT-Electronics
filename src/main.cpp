@@ -32,7 +32,7 @@ int soilWetADC = -1;               // calibration (wet)
 // LoRa Constants ------------------------------------------------------------------------//
 #define LORA_SERIAL Serial1 // Serial Port
 
-static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
+static const uint32_t LoRaBaud = 115200;
 
 // Sending Data constants
 float insideTemp; 
@@ -152,6 +152,7 @@ float outTemp() {
   float tempC = tKelvin - 273.15f;
   Serial.print("Out Temp: ");
   Serial.print(tempC, 2);
+  Serial.println("");
   return tempC;
 }
 
@@ -228,9 +229,9 @@ void sendLoRaAT(const String& cmd, unsigned long wait = 500) {  // Send initial 
   }
 }
 
-void sendLoRaData(const String& payload, unsigned long wait = 2000) { // Send data via LoRa
+void sendLoRaData(const String& payload, unsigned long wait = 2500) { // Send data via LoRa
   // Build AT command with length and payload
-  String cmd = "AT+DTRX=1,2," + String(payload.length()) + "," + payload;
+  String cmd = "AT+SEND=" + String(payload.length()) + "," + payload;
 
   // Send to RA-08H
   LORA_SERIAL.println(cmd);
@@ -273,21 +274,22 @@ void setup() {
   loadCalibration(); // Load saved wet and dry moisture values
   
   // Initialize LoRa at 915 MHz (NZ band) --------------------------------------------------------------------------------//
-  LORA_SERIAL.begin(9600); // RA-08H default baud is 9600
+  LORA_SERIAL.begin(LoRaBaud); // RA-08H default baud is 9600
   delay(2000);
   Serial.println("Configuring RA-08H LoRa module...");
-  sendLoRaAT("AT");                         // Test module
-  sendLoRaAT("AT+GMR");                     // Get version
-  sendLoRaAT("AT+RESTORE");                 // Factory Reset
-  sendLoRaAT("AT+CGBR=9600");               // Set UART Baud rate
-  sendLoRaAT("AT+CJOINMODE=0");             // Set ABP join mode
-  sendLoRaAT("AT+CDEVADDR?");               // Dev address
-  sendLoRaAT("AT+CAPPSKEY?");               // AppSkey
-  sendLoRaAT("AT+CNWKSKEY?");               // NWKSkey
-  sendLoRaAT("AT+CFREQBANDMASK=0001");      // set fequency band
-  sendLoRaAT("AT+CULDLMODE=2");             // Set join same/different frequency
-  sendLoRaAT("AT+CCLASS=0");                // Set class to A
-  sendLoRaAT("AT+CJOIN=1,0, 10,8");
+  sendLoRaAT("AT");
+  sendLoRaAT("AT+VER?");
+  sendLoRaAT("AT+MODE=0 ");
+  sendLoRaAT("AT+FREQ=915200000  ");
+  sendLoRaAT("AT+DR=7");
+  sendLoRaAT("AT+BW=125000");
+  sendLoRaAT("AT+CR=1");
+  sendLoRaAT("AT+PWR=20");
+  sendLoRaAT("AT+PREAM=8");
+  sendLoRaAT("AT+SYNC=34");
+  sendLoRaAT("AT+SAVE ");
+  sendLoRaAT("AT+RESET ");
+  sendLoRaAT("AT");
   Serial.println("LoRa Module Configured");
 }
 

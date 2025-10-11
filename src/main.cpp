@@ -2,16 +2,16 @@
 #include <header.h>
 
 // Constants ---------------------------------------------------------------------------//
-#define DHTPIN 10  // DHT11 Pin
+#define DHTPIN 22  // DHT11 Pin
 
 // Grove GPS Constants
-static const int GPSRXPin = 2, GPSTXPin = 4;  // Serial Port
+static const int GPSRXPin = 5, GPSTXPin = 4;  // Serial Port
 static const uint32_t GPSBaud = 9600; // GPS Baud Rate
 const long interval = 10000;  
 unsigned long previousMillis = 0;
 
 // Thermistor Constants ------------------------------------------------------------------//
-const int thermistorPin = A2; // Thermistor pins
+const int thermistorPin = 0; // Thermistor pins
 const float seriesResistor = 10000.0;  // 10k Ohm series resistor
 const float nominalResistance = 10000.0; // Resistance of thermistor at 25ºC
 const float nominalTemperature = 25.0;   // Nominal temperature (ºC)
@@ -19,8 +19,8 @@ const float betaCoefficient = 3892.0;    // Beta coefficient of the thermistor
 const float VREF = 3.26f;                  // ADC reference (3.3V)
 
 // Soil Data Constants ------------------------------------------------------------------//
-const uint8_t soilPin = A1;        // analog pin for envelope node
-const int ADC_BITS = 14;           // Uno R4 Minima ADC
+const uint8_t soilPin = 3;        // analog pin for envelope node
+const int ADC_BITS = 12;           // Uno R4 Minima ADC
 int ADC_MAX = (1 << ADC_BITS) - 1;
 
 float soilAlpha = 0.15f;           // EMA smoothing factor
@@ -31,9 +31,12 @@ int soilWetADC = -1;               // calibration (wet)
 
 // LoRa Constants ------------------------------------------------------------------------//
 int counterLoRa = 0;
-const int nss_pin = 9;
-const int rst_pin = 8;
-const int di0_pin = 7;
+const int nss_pin = 18;
+const int rst_pin = 19;
+const int di0_pin = 20;
+const int sck = 6;
+const int miso = 2;
+const int mosi = 7;
 
 // Sending Data constants
 float insideTemp; 
@@ -51,17 +54,19 @@ DHT_Unified dht(DHTPIN, DHTTYPE); //Create dht object
 TinyGPSPlus gps; // The TinyGPSPlus object
 
 // Software Serials
-SoftwareSerial GPSSerial(GPSRXPin, GPSTXPin); // Serial for GPS object
+HardwareSerial GPSSerial(1); // Serial for GPS object
 
 // Custom Functions -----------------------------------------------------------------------------------------//
 void saveCalibration() {  // Save SMS dry/wet values
   EEPROM.put(0, soilDryADC);
   EEPROM.put(sizeof(int), soilWetADC);
+  EEPROM.commit();
 }
 
 void loadCalibration() {  // Load previouse SMS dry/wet values
   EEPROM.get(0, soilDryADC);
   EEPROM.get(sizeof(int), soilWetADC);
+  EEPROM.commit();
 }
 
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max){  // Map
@@ -244,7 +249,7 @@ void receiveLoRaData(int packetSize) {
 void setup() {
   // Initialize devices
   Serial.begin(9600); // Physical Serial
-  GPSSerial.begin(GPSBaud); // GPS Virtual Serial
+  GPSSerial.begin(GPSBaud, SERIAL_8N1, GPSRXPin, GPSTXPin); // GPS Virtual Serial
   Wire.begin();
   dht.begin();
 
@@ -261,11 +266,13 @@ void setup() {
     analogReadResolution(ADC_BITS);
   #endif
   pinMode(soilPin, INPUT);
-
+  
+  EEPROM.begin(sizeof(int) * 2); // Allocate space for soil data storage
   loadCalibration(); // Load saved wet and dry moisture values
   
   // Initialize LoRa --------------------------------------------------------------------------------//
   Serial.println("Configuring RA-01S LoRa module...");
+  SPI.begin(sck, miso, mosi, nss_pin);
   LoRa.setPins(nss_pin, rst_pin, di0_pin); // Set digital LoRa Pins
 
   while(1) {

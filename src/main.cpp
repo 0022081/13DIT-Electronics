@@ -31,9 +31,9 @@ int soilWetADC = -1;               // calibration (wet)
 
 // LoRa Constants ------------------------------------------------------------------------//
 int counterLoRa = 0;
-const int nss_pin = 9;
-const int rst_pin = 8;
-const int di0_pin = 7;
+#define NSS_PIN 9
+#define RST_PIN 8
+#define DIO0_PIN 7
 
 // Sending Data constants
 float insideTemp; 
@@ -261,24 +261,17 @@ void setup() {
     analogReadResolution(ADC_BITS);
   #endif
   pinMode(soilPin, INPUT);
-
   loadCalibration(); // Load saved wet and dry moisture values
   
   // Initialize LoRa --------------------------------------------------------------------------------//
   Serial.println("Configuring RA-01S LoRa module...");
-  LoRa.setPins(nss_pin, rst_pin, di0_pin); // Set digital LoRa Pins
-
-  while(1) {
-    if (!LoRa.begin(433E6)) { // Initialize at 433MHz & Check for failed intializitation
+  LoRa.setPins(NSS_PIN, RST_PIN, DIO0_PIN); // Set digital LoRa Pins
+  delay(1000);
+  while (!LoRa.begin(433E6)) { // Initialize at 433MHz & Check for failed intializitation
     Serial.println("Starting LoRa failed!");
+    delay(500);
   }
-    else {
-      Serial.println("LoRa initialized");
-      break;
-    }
-    delay(200);
-  }
-  
+
   LoRa.setSpreadingFactor(8);
 
   Serial.println("LoRa Module Configured");

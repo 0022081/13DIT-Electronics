@@ -2,7 +2,7 @@
 #include <header.h>
 
 // Constants ---------------------------------------------------------------------------//
-#define DHTPIN 12  // DHT11 Pin
+#define DHTPIN 10  // DHT11 Pin
 
 // Grove GPS Constants
 static const int GPSRXPin = 2, GPSTXPin = 4;  // Serial Port
@@ -30,9 +30,10 @@ int soilDryADC = -1;               // calibration (dry)
 int soilWetADC = -1;               // calibration (wet)
 
 // LoRa Constants ------------------------------------------------------------------------//
-#define LORA_SERIAL Serial1 // Serial Port
-
-static const uint32_t LoRaBaud = 115200;
+int counterLoRa = 0;
+const int nss_pin = 9;
+const int rst_pin = 8;
+const int di0_pin = 7;
 
 // Sending Data constants
 float insideTemp; 
@@ -212,42 +213,32 @@ void setSoilWet() {
   Serial.print("Wet calibration set: "); Serial.println(soilWetADC);
 }
 
-void sendLoRaAT(const String& cmd, unsigned long wait = 500) {  // Send initial LoRa AT commands (setup)
-  LORA_SERIAL.println(cmd);
-  Serial.print(">> "); Serial.println(cmd);
+void sendLoRaData(const String &payload, int &counterLoRa) { // Send data via LoRa
+  Serial.println(counterLoRa);
+  
+  // send payload
+  LoRa.beginPacket();
+  LoRa.print(payload);
+  LoRa.print(counterLoRa);
+  LoRa.endPacket();
 
-  // Give module time to respond
-  delay(wait);
-
-  // Optional: check response
-  while (LORA_SERIAL.available()) {
-    String resp = LORA_SERIAL.readStringUntil('\n');
-    resp.trim();
-    if (resp.length() > 0) {
-      Serial.print("<< "); Serial.println(resp);
-    }
-  }
+  counterLoRa++;
 }
 
-void sendLoRaData(const String& payload, unsigned long wait = 2500) { // Send data via LoRa
-  // Build AT command with length and payload
-  String cmd = "AT+SEND=" + String(payload.length()) + "," + payload;
+void receiveLoRaData(int packetSize) {
+  if (packetSize == 0) return;          // if there's no packet, return
 
-  // Send to RA-08H
-  LORA_SERIAL.println(cmd);
-  Serial.print(">> "); Serial.println(cmd);
+  // read packet header bytes:
+  String incoming = "";
 
-  // Give module time to respond
-  delay(wait);
-
-  // Optional: check response
-  while (LORA_SERIAL.available()) {
-    String resp = LORA_SERIAL.readStringUntil('\n');
-    resp.trim();
-    if (resp.length() > 0) {
-      Serial.print("<< "); Serial.println(resp);
-    }
+  while (LoRa.available()) {
+    incoming += (char)LoRa.read();
   }
+
+  Serial.println("Message: " + incoming);
+  Serial.println("RSSI: " + String(LoRa.packetRssi()));
+  Serial.println("Snr: " + String(LoRa.packetSnr()));
+  Serial.println();
 }
 
 void setup() {
@@ -273,23 +264,23 @@ void setup() {
 
   loadCalibration(); // Load saved wet and dry moisture values
   
-  // Initialize LoRa at 915 MHz (NZ band) --------------------------------------------------------------------------------//
-  LORA_SERIAL.begin(LoRaBaud); // RA-08H default baud is 9600
-  delay(2000);
-  Serial.println("Configuring RA-08H LoRa module...");
-  sendLoRaAT("AT");
-  sendLoRaAT("AT+VER?");
-  sendLoRaAT("AT+MODE=0 ");
-  sendLoRaAT("AT+FREQ=915200000  ");
-  sendLoRaAT("AT+DR=7");
-  sendLoRaAT("AT+BW=125000");
-  sendLoRaAT("AT+CR=1");
-  sendLoRaAT("AT+PWR=20");
-  sendLoRaAT("AT+PREAM=8");
-  sendLoRaAT("AT+SYNC=34");
-  sendLoRaAT("AT+SAVE ");
-  sendLoRaAT("AT+RESET ");
-  sendLoRaAT("AT");
+  // Initialize LoRa --------------------------------------------------------------------------------//
+  Serial.println("Configuring RA-01S LoRa module...");
+  LoRa.setPins(nss_pin, rst_pin, di0_pin); // Set digital LoRa Pins
+
+  while(1) {
+    if (!LoRa.begin(433E6)) { // Initialize at 433MHz & Check for failed intializitation
+    Serial.println("Starting LoRa failed!");
+  }
+    else {
+      Serial.println("LoRa initialized");
+      break;
+    }
+    delay(200);
+  }
+  
+  LoRa.setSpreadingFactor(8);
+
   Serial.println("LoRa Module Configured");
 }
 
@@ -332,11 +323,13 @@ void loop() {
                  + ",Soil=" + String(soilMoisture, 1) + "%"
                  + ",OutTemp=" + String(outsideTemp, 1) + "C";
   
-  // Add AT send function to Payload string
-  sendLoRaData(payload, 2000);
+  // Send soil data via LoRa
+  sendLoRaData(payload, counterLoRa);
+  // parse for a packet, and call onReceive with the result:
+  receiveLoRaData(LoRa.parsePacket());
 
   // Delay between readings ---------------------------------------------------------------------------------------------------//
-  smartDelay(10);
+  smartDelay(500);
 
   // If No data is encoded to GPS module in 5s = Error
   if (millis() > 5000 && gps.charsProcessed() < 10) {

@@ -9,5 +9,3 @@
 #include <TinyGPSPlus.h>  // GPS Module
 #include <SoftwareSerial.h> // Virtual Serial for GPS
 #include <EEPROM.h> // EEPROM Module
-#include <SPI.h>    
-#include <LoRa.h> // Ra-01S Module

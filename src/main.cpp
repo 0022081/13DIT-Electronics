@@ -37,6 +37,10 @@ int counterLoRa = 0;
 #define BUTTON_WET_PIN 6
 #define BUTTON_DRY_PIN 7
 
+// Calibration LEDs
+const int redLED = 8;
+const int greenLED = 9;
+
 // Sending Data constants
 float insideTemp; 
 float insideHum;
@@ -316,6 +320,11 @@ void receiveLoRaData() {
 // System set up
 void setup() {
   // Initialize devices
+  pinMode(redLED, OUTPUT);
+  pinMode(greenLED, OUTPUT);
+  digitalWrite(greenLED, LOW);
+  digitalWrite(redLED, HIGH);
+
   Serial.begin(9600); // Physical Serial
   delay(50);
 
@@ -356,6 +365,8 @@ void updateSoilMoistureData () {
     Serial.print("Moisture: ");
     Serial.print(soilMoisture, 1);
     Serial.println(" %");
+    digitalWrite(greenLED, HIGH);
+    digitalWrite(redLED, LOW);
   } else {
     Serial.println("Moisture: UNCALIBRATED");
   }

@@ -58,4 +58,4 @@ Step: Configuring Wireless Soil Moisture Sensor.
 5) Wireless LoRa system should automatically connect to reciever module if within range, 1-2km (without major obstruction like buildings or trees.)
 
 Step: Connecting to arduino via USB-C Cable. 
-6) Insert USB-C cable through open port on the top of the system. Configure puTTY the same as for the reciever LoRa module and open. Turn on arduino system. 
+6) Insert USB-C cable through open port on the top of the system. Configure puTTY the same as for the reciever LoRa module and open. Turn on arduino system via switch. 

@@ -276,13 +276,13 @@ void setSoilWet() {
 // Check button debouce func.
 void click(Button2& btn) {
   if (btn == buttonWet) {
+    Serial.println(F("Wet Button Pressed")); // debug
     setSoilWet();
     saveCalibration();
-    Serial.println(F("Wet Button Pressed")); // debug
   } else if (btn == buttonDry) {
+    Serial.println(F("Dry button pressed")); // debug
     setSoilDry();
     saveCalibration();
-    Serial.println(F("Dry button pressed")); // debug
   }
 }
 
@@ -325,9 +325,9 @@ void setup() {
 
   analogReadResolution(ADC_BITS); // Set analog read resolution to 14 bits
   buttonWet.begin(BUTTON_WET_PIN);
-  buttonWet.setClickHandler(click);
+  buttonWet.setTapHandler(click);
   buttonDry.begin(BUTTON_DRY_PIN);
-  buttonDry.setClickHandler(click);
+  buttonDry.setTapHandler(click);
 
   // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
   sensor_t sensor;
@@ -380,8 +380,9 @@ void updateSoilMoistureData () {
   // Outside Thermisistor ----------------------------------------------------------------------------------------------------------//
   outsideTemp = outTemp();
   if (!std::isnan(outsideTemp) && !std::isinf(outsideTemp) || outsideTemp <= -273.15 || outsideTemp >= 150) {
-        Serial.print(outsideTemp, 2);
-        Serial.println();
+    Serial.print(F("Out Temp: "));
+    Serial.print(outsideTemp, 2);
+    Serial.println();
     } else {
       Serial.print(F("Outside Temp: INVALID"));
     }
@@ -418,7 +419,7 @@ void loop() {
 
   // Check time for testing 
   if (checkTestingTime() == true) {
-    Serial.println("Testing invertal expired, testing..."); // debug
+    //Serial.println("Testing invertal expired, testing..."); // debug
     for (int i = 1; i <= 5; i++) {
       if (breakTest == true) {
         break;
@@ -427,7 +428,7 @@ void loop() {
       Serial.println("Test: " + i);
     }
   } else if (checkTestingTime() == false) {
-    Serial.println("Testing interval not expired"); // debug
+    //Serial.println("Testing interval not expired"); // debug
   }
 
   // Delay and encoding for GPS
@@ -435,6 +436,6 @@ void loop() {
 
   // If No data is encoded to GPS module in 5s = Error
   if (millis() > 5000 && gps.charsProcessed() < 10) {
-		Serial.println("No GPS data received: INVALID WIRING");
+		//Serial.println("No GPS data received: INVALID WIRING");
 	}
 }

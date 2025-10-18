@@ -54,8 +54,10 @@ int lastTriggerMinute = -1;
 // Soil module state
 bool testModuleState = false;
 
+// Using onboard Millis
 unsigned long currentMillis = 0; // stores value of millis()
 unsigned long previouseOnBoardMillis = 0; // stores last board run time
+unsigned long interval_duration = 1000;
 
 bool breakTest = false; // break testing during loop if returns true
 
@@ -134,32 +136,53 @@ void gpsData() {  // GPS location data
   Serial.println();
 
   // Print No. Satellites fixed
-  Serial.print("Satellites: ");
+  Serial.print(F("Satellites: "));
   if (gps.satellites.isValid()) {
    Serial.println(gps.satellites.value());
   } else {
-    Serial.println("INVALID");
+    Serial.print(F("INVALID"));
   }
 
   Serial.println();
 }
 
 // Return interval for testing delays
+// bool checkTestingTime() {
+//   if (gps.time.isValid()) {
+//     int checkHour = gps.time.hour();
+//     int checkMinute = gps.time.minute();
+//   } else {
+//     Serial.println("Check Time Failed!");
+//   }
+
+//   if (halfHourCheck && (checkMinute != lastTriggerMinute || checkHour != lastTriggerHour)) {
+//     lastTriggerHour = checkHour;
+//     lastTriggerMinute = checkMinute;
+//     return true;
+//   } else {
+//     return false;
+//   }
+  
+// }
+
+// Return interval for testing every 5 seconds
 bool checkTestingTime() {
+  static int lastTriggerSecond = -1;
+
   if (gps.time.isValid()) {
-    int checkHour = gps.time.hour();
-    int checkMinute = gps.time.minute();
+    int currentSecond = gps.time.second();
+
+    // Check if 5 seconds have passed since last trigger
+    if (lastTriggerSecond == -1 || (currentSecond - lastTriggerSecond + 60) % 60 >= 5) {
+      lastTriggerSecond = currentSecond;
+      return true;
+    }
+
   } else {
-    Serial.println("Check Time Failed!");
+    Serial.println(F("Check Time Failed!")); // debug
   }
 
-  if (halfHourCheck && (checkMinute != lastTriggerMinute || checkHour != lastTriggerHour)) {
-    lastTriggerHour = checkHour;
-    lastTriggerMinute = checkMinute;
-    return true;
-  } else {
-    return false;
-  }
+  return false;
 }
 
 // Continiouse GPS encoding with delay
@@ -176,12 +199,12 @@ void smartDelay(unsigned long ms) { // Smart delay for GPS (constant feeding)
 float outTemp() {
   int adc = analogRead(thermistorPin);               // 0..4095
   if (adc <= 0) return -273.15f;                     // avoid div by zero, return nonsense cold
-  if (adc >= ADC_MAX) return 150.0f;                  // sensor saturated; return large temp (or handle differently)
+  if (adc >= ADC_MAX) return 150.0f;                  // sensor saturated; return large temp
 
   float vout = (float)adc / (float)ADC_MAX * VREF;  // convert ADC to voltage (Vout)
 
   float denom = (VREF - vout);
-  if (denom <= 0.0f) return 150.0f;                  // safety check: denominator must be >0
+  if (denom <= 0.0f) return 150.0f;                // safety check: denominator must be >0
   float rTherm = seriesResistor * (vout / denom);   // compute thermistor resistance (R_therm)
 
   // compute temperature using Beta equation
@@ -192,38 +215,30 @@ float outTemp() {
 
   // convert to Celsius
   float tempC = tKelvin - 273.15f;
-  Serial.print("Out Temp: ");
-  Serial.print(tempC, 2);
-  Serial.println("");
-  return tempC;
+
+  return tempC; // return temperature to payload
 }
 
 // Read inside Temp & Humidity
-void insideDht() {
+void insideDht(float &temp, float &hum) {
   // DHT11 ----------------------------------------------------------------------------------------------------------//
-  // Get temperature event and print its value
+  // Get temperature 
   sensors_event_t event;
 
   dht.temperature().getEvent(&event);
   if (isnan(event.temperature)) {
-    Serial.println(F("Error reading temperature!"));
+    temp = NAN;
   }
   else {
-    insideTemp = (event.temperature);
-    Serial.print(F("Temperature: "));
-    Serial.print(insideTemp);
-    Serial.println(F("°C"));
+    temp = (event.temperature);
   }
-  // Get humidity event and print its value.
+  // Get humidity
   dht.humidity().getEvent(&event);
   if (isnan(event.relative_humidity)) {
-    Serial.println(F("Error reading humidity!"));
+    hum = NAN;
   }
   else {
-    insideHum = (event.relative_humidity);
-    Serial.print(F("Humidity: "));
-    Serial.print(insideHum);
-    Serial.println(F("%"));
+    hum = (event.relative_humidity);    
   }
 }
 
@@ -263,11 +278,11 @@ void click(Button2& btn) {
   if (btn == buttonWet) {
     setSoilWet();
     saveCalibration();
-    Serial.println("Wet Button Pressed");
+    Serial.println(F("Wet Button Pressed")); // debug
   } else if (btn == buttonDry) {
     setSoilDry();
     saveCalibration();
-    Serial.println("Dry button pressed");
+    Serial.println(F("Dry button pressed")); // debug
   }
 }
 
@@ -280,7 +295,6 @@ void sendLoRaData(const String &payload) { // Send data via LoRa
 
   // send payload through TX and RX pins
   Serial1.write((const uint8_t*)sendData, payloadLength);
-  Serial1.write('\n');
   
   // Print sent payload to serial monitor
   Serial.println(sendData);
@@ -332,13 +346,11 @@ void setup() {
 // Test Soil Data and Temperature Loop
 void updateSoilMoistureData () {
 
-  Serial.println("Testing Soil Data");
+  Serial.println("Testing Soil Data"); // debug
 
   // Soil moisture Data --------------------------------------------------------------------------------------------------------//
   // Set soil moisture value
-  float soilMoisture = soilData();
-
-  // Check soil moisture calibration values - that calibration was set
+  soilMoisture = soilData();
   if (soilMoisture >= 0.0f) {
     Serial.print("Moisture: ");
     Serial.print(soilMoisture, 1);
@@ -348,9 +360,32 @@ void updateSoilMoistureData () {
   }
 
   // Inside Temp & Humidity ----------------------------------------------------------------------------------------------------------//
-  insideDht();
+  insideDht(insideTemp, insideHum);
+  if (!isnan(insideTemp)) {
+    Serial.print(F("Inside Temp: "));
+    Serial.print(insideTemp);
+    Serial.println(F("°C"));
+  } else {
+    Serial.println(F("Inside Temp: INVALID"));
+  }
+
+  if (!isnan(insideHum)) {
+    Serial.print(F("Humidity: "));
+    Serial.print(insideHum);
+    Serial.println(F("%"));
+  } else {
+    Serial.println(F("Inside Hum: INVALID"));
+  }
+
   // Outside Thermisistor ----------------------------------------------------------------------------------------------------------//
   outsideTemp = outTemp();
+  if (!std::isnan(outsideTemp) && !std::isinf(outsideTemp) || outsideTemp <= -273.15 || outsideTemp >= 150) {
+        Serial.print(outsideTemp, 2);
+        Serial.println();
+    } else {
+      Serial.print(F("Outside Temp: INVALID"));
+    }
+  
   // Get GPS Data --------------------------------------------------------------------------------------------------------------//
   gpsData();
 
@@ -361,26 +396,29 @@ void updateSoilMoistureData () {
                  + ",Lat=" + String(gpsLat, 6)
                  + ",Lon=" + String(gpsLon, 6)
                  + ",Soil=" + String(soilMoisture, 1) + "%"
-                 + ",OutTemp=" + String(outsideTemp, 1) + "C";
-  
+                 + ",OutTemp=" + String(outsideTemp, 1) + "C"
+                 + "\n";
+
   // Send soil data via LoRa
   sendLoRaData(payload);
-  delay(200); // delay before checking for response
+  delay(1000); // delay before checking for response
   // Reciever any responses from receiver module
   receiveLoRaData();
-  delay(100); // delay between readings
+  delay(200); // delay between readings
 }
 
 // Main board system loop
 void loop() {
-  
+
+  currentMillis = millis();
+
   // Check for Soil Moisture Calibration via buttons
   buttonWet.loop();
   buttonDry.loop();
 
   // Check time for testing 
   if (checkTestingTime() == true) {
-    Serial.println("Testing invertal expired, testing...");
+    Serial.println("Testing invertal expired, testing..."); // debug
     for (int i = 1; i <= 5; i++) {
       if (breakTest == true) {
         break;
@@ -389,7 +427,7 @@ void loop() {
       Serial.println("Test: " + i);
     }
   } else if (checkTestingTime() == false) {
-    Serial.println("Testing interval not expired");
+    Serial.println("Testing interval not expired"); // debug
   }
 
   // Delay and encoding for GPS
@@ -397,6 +435,6 @@ void loop() {
 
   // If No data is encoded to GPS module in 5s = Error
   if (millis() > 5000 && gps.charsProcessed() < 10) {
-		Serial.println("No GPS data received: check wiring");
+		Serial.println("No GPS data received: INVALID WIRING");
 	}
 }

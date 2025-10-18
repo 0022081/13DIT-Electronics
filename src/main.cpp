@@ -2,7 +2,7 @@
 #include <header.h>
 
 // Constants ---------------------------------------------------------------------------//
-#define DHTPIN 12  // DHT11 Pin
+#define DHTPIN 10  // DHT11 Pin
 
 // Grove GPS Constants
 static const int GPSRXPin = 2, GPSTXPin = 4;  // Serial Port
@@ -30,9 +30,11 @@ int soilDryADC = -1;               // calibration (dry)
 int soilWetADC = -1;               // calibration (wet)
 
 // LoRa Constants ------------------------------------------------------------------------//
-#define LORA_SERIAL Serial1 // Serial Port
+int counterLoRa = 0;
 
-static const uint32_t LoRaBaud = 9600; // GPS Baud Rate
+// Buttons ------------------------------------------------------------------------------//
+#define BUTTON_WET_PIN 6
+#define BUTTON_DRY_PIN 7
 
 // Sending Data constants
 float insideTemp; 
@@ -42,31 +44,53 @@ float gpsLon;
 float soilMoisture;
 float outsideTemp;
 
+// Code running time constants ---------------------------------------------------------//
+float checkMinute;
+float checkHour;
+bool halfHourCheck = (checkMinute == 0 || checkMinute == 30);
+int lastTriggerHour = -1;
+int lastTriggerMinute = -1;
+
+// Soil module state
+bool testModuleState = false;
+
+// Using onboard Millis
+unsigned long currentMillis = 0; // stores value of millis()
+unsigned long previouseOnBoardMillis = 0; // stores last board run time
+unsigned long interval_duration = 1000;
+
+bool breakTest = false; // break testing during loop if returns true
+
 // Defining Device Types ----------------------------------------------------------------//
 #define DHTTYPE    DHT11 
 
 // Define Objects ------------------------------------------------------------------------//
 DHT_Unified dht(DHTPIN, DHTTYPE); //Create dht object
 TinyGPSPlus gps; // The TinyGPSPlus object
+Button2 buttonWet, buttonDry;
 
 // Software Serials
 SoftwareSerial GPSSerial(GPSRXPin, GPSTXPin); // Serial for GPS object
 
 // Custom Functions -----------------------------------------------------------------------------------------//
+// Save soil data
 void saveCalibration() {  // Save SMS dry/wet values
   EEPROM.put(0, soilDryADC);
   EEPROM.put(sizeof(int), soilWetADC);
 }
 
+// Load saved soil data
 void loadCalibration() {  // Load previouse SMS dry/wet values
   EEPROM.get(0, soilDryADC);
   EEPROM.get(sizeof(int), soilWetADC);
 }
 
+// Soil data smoothing func.
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max){  // Map
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+// Read GPS location & time
 void gpsData() {  // GPS location data
   Serial.print(F("Location: ")); 
   if (gps.location.isValid()) {
@@ -112,16 +136,56 @@ void gpsData() {  // GPS location data
   Serial.println();
 
   // Print No. Satellites fixed
-  Serial.print("Satellites: ");
+  Serial.print(F("Satellites: "));
   if (gps.satellites.isValid()) {
    Serial.println(gps.satellites.value());
   } else {
-    Serial.println("INVALID");
+    Serial.print(F("INVALID"));
   }
 
   Serial.println();
 }
 
+// Return interval for testing delays
+// bool checkTestingTime() {
+//   if (gps.time.isValid()) {
+//     int checkHour = gps.time.hour();
+//     int checkMinute = gps.time.minute();
+//   } else {
+//     Serial.println("Check Time Failed!");
+//   }
+
+//   if (halfHourCheck && (checkMinute != lastTriggerMinute || checkHour != lastTriggerHour)) {
+//     lastTriggerHour = checkHour;
+//     lastTriggerMinute = checkMinute;
+//     return true;
+//   } else {
+//     return false;
+//   }
+  
+// }
+
+// Return interval for testing every 5 seconds
+bool checkTestingTime() {
+  static int lastTriggerSecond = -1;
+
+  if (gps.time.isValid()) {
+    int currentSecond = gps.time.second();
+
+    // Check if 5 seconds have passed since last trigger
+    if (lastTriggerSecond == -1 || (currentSecond - lastTriggerSecond + 60) % 60 >= 5) {
+      lastTriggerSecond = currentSecond;
+      return true;
+    }
+
+  } else {
+    Serial.println(F("Check Time Failed!")); // debug
+  }
+
+  return false;
+}
+
+// Continiouse GPS encoding with delay
 void smartDelay(unsigned long ms) { // Smart delay for GPS (constant feeding)
 	unsigned long start = millis();
 	do {
@@ -131,15 +195,16 @@ void smartDelay(unsigned long ms) { // Smart delay for GPS (constant feeding)
 	} while (millis() - start < ms);
 }
 
+// Return outside Temp
 float outTemp() {
   int adc = analogRead(thermistorPin);               // 0..4095
   if (adc <= 0) return -273.15f;                     // avoid div by zero, return nonsense cold
-  if (adc >= ADC_MAX) return 150.0f;                  // sensor saturated; return large temp (or handle differently)
+  if (adc >= ADC_MAX) return 150.0f;                  // sensor saturated; return large temp
 
   float vout = (float)adc / (float)ADC_MAX * VREF;  // convert ADC to voltage (Vout)
 
   float denom = (VREF - vout);
-  if (denom <= 0.0f) return 150.0f;                  // safety check: denominator must be >0
+  if (denom <= 0.0f) return 150.0f;                // safety check: denominator must be >0
   float rTherm = seriesResistor * (vout / denom);   // compute thermistor resistance (R_therm)
 
   // compute temperature using Beta equation
@@ -150,40 +215,35 @@ float outTemp() {
 
   // convert to Celsius
   float tempC = tKelvin - 273.15f;
-  Serial.print("Out Temp: ");
-  Serial.print(tempC, 2);
-  return tempC;
+
+  return tempC; // return temperature to payload
 }
 
-void insideDht() {  // Inside DHT11 sensor
+// Read inside Temp & Humidity
+void insideDht(float &temp, float &hum) {
   // DHT11 ----------------------------------------------------------------------------------------------------------//
-  // Get temperature event and print its value
+  // Get temperature 
   sensors_event_t event;
 
   dht.temperature().getEvent(&event);
   if (isnan(event.temperature)) {
-    Serial.println(F("Error reading temperature!"));
+    temp = NAN;
   }
   else {
-    insideTemp = (event.temperature);
-    Serial.print(F("Temperature: "));
-    Serial.print(insideTemp);
-    Serial.println(F("°C"));
+    temp = (event.temperature);
   }
-  // Get humidity event and print its value.
+  // Get humidity
   dht.humidity().getEvent(&event);
   if (isnan(event.relative_humidity)) {
-    Serial.println(F("Error reading humidity!"));
+    hum = NAN;
   }
   else {
-    insideHum = (event.relative_humidity);
-    Serial.print(F("Humidity: "));
-    Serial.print(insideHum);
-    Serial.println(F("%"));
+    hum = (event.relative_humidity);    
   }
 }
 
-float soilData() {  // SMS data
+// Return soil moisture % value
+float soilData() { 
   int raw = analogRead(soilPin);
   Serial.print("Soil raw: "); Serial.println(raw);
 
@@ -201,62 +261,73 @@ float soilData() {  // SMS data
   }
 }
 
+// Set dry soil calibration
 void setSoilDry() {
   soilDryADC = analogRead(soilPin);
   Serial.print("Dry calibration set: "); Serial.println(soilDryADC);
 }
 
+// Set wet soil calibration 
 void setSoilWet() {
   soilWetADC = analogRead(soilPin);
   Serial.print("Wet calibration set: "); Serial.println(soilWetADC);
 }
 
-void sendLoRaAT(const String& cmd, unsigned long wait = 500) {  // Send initial LoRa AT commands (setup)
-  LORA_SERIAL.println(cmd);
-  Serial.print(">> "); Serial.println(cmd);
-
-  // Give module time to respond
-  delay(wait);
-
-  // Optional: check response
-  while (LORA_SERIAL.available()) {
-    String resp = LORA_SERIAL.readStringUntil('\n');
-    resp.trim();
-    if (resp.length() > 0) {
-      Serial.print("<< "); Serial.println(resp);
-    }
+// Check button debouce func.
+void click(Button2& btn) {
+  if (btn == buttonWet) {
+    setSoilWet();
+    saveCalibration();
+    Serial.println(F("Wet Button Pressed")); // debug
+  } else if (btn == buttonDry) {
+    setSoilDry();
+    saveCalibration();
+    Serial.println(F("Dry button pressed")); // debug
   }
 }
 
-void sendLoRaData(const String& payload, unsigned long wait = 2000) { // Send data via LoRa
-  // Build AT command with length and payload
-  String cmd = "AT+SEND " + String(payload.length()) + "," + payload;
+// Send LoRa packets
+void sendLoRaData(const String &payload) { // Send data via LoRa
+  
+  // create payload in bytes
+  const char *sendData = payload.c_str();
+  size_t payloadLength = strlen(sendData);
 
-  // Send to RA-08H
-  LORA_SERIAL.println(cmd);
-  Serial.print(">> "); Serial.println(cmd);
-
-  // Give module time to respond
-  delay(wait);
-
-  // Optional: check response
-  while (LORA_SERIAL.available()) {
-    String resp = LORA_SERIAL.readStringUntil('\n');
-    resp.trim();
-    if (resp.length() > 0) {
-      Serial.print("<< "); Serial.println(resp);
-    }
-  }
+  // send payload through TX and RX pins
+  Serial1.write((const uint8_t*)sendData, payloadLength);
+  
+  // Print sent payload to serial monitor
+  Serial.println(sendData);
 }
 
+// Receive LoRa packets
+void receiveLoRaData() {
+  // read packet header bytes:
+  String incoming = "";
+
+  while (Serial1.available()) {
+    incoming += (char)Serial1.read();
+  }
+
+  Serial.println("Message: " + incoming);
+}
+
+// System set up
 void setup() {
   // Initialize devices
   Serial.begin(9600); // Physical Serial
+  delay(50);
+
+  Serial1.begin(9600);
   GPSSerial.begin(GPSBaud); // GPS Virtual Serial
   Wire.begin();
   dht.begin();
 
-   analogReadResolution(ADC_BITS); // Set analog read resolution to 14 bits
+  analogReadResolution(ADC_BITS); // Set analog read resolution to 14 bits
+  buttonWet.begin(BUTTON_WET_PIN);
+  buttonWet.setClickHandler(click);
+  buttonDry.begin(BUTTON_DRY_PIN);
+  buttonDry.setClickHandler(click);
 
   // Set DHT11 sensor -----------------------------------------------------------------------------------------------------//
   sensor_t sensor;
@@ -269,33 +340,17 @@ void setup() {
     analogReadResolution(ADC_BITS);
   #endif
   pinMode(soilPin, INPUT);
-
   loadCalibration(); // Load saved wet and dry moisture values
-  
-  // Initialize LoRa at 915 MHz (NZ band) --------------------------------------------------------------------------------//
-  LORA_SERIAL.begin(9600); // RA-08H default baud is 9600
-  delay(2000);
-  Serial.println("Configuring RA-08H LoRa module...");
-  sendLoRaAT("AT+CJOIN=1,0, 10,8");
-  
-  Serial.println("LoRa Module Configured");
 }
 
-void loop() {
-  // Soil moisture Data --------------------------------------------------------------------------------------------------------//
-  if (Serial.available()) {
-    char c = Serial.read();
-    if (c == 'd' || c == 'D') {
-      setSoilDry();
-      saveCalibration();
-    } else if (c == 'w' || c == 'W') {
-      setSoilWet();
-      saveCalibration();
-    }
-  }
-  
-  float soilMoisture = soilData();
+// Test Soil Data and Temperature Loop
+void updateSoilMoistureData () {
 
+  Serial.println("Testing Soil Data"); // debug
+
+  // Soil moisture Data --------------------------------------------------------------------------------------------------------//
+  // Set soil moisture value
+  soilMoisture = soilData();
   if (soilMoisture >= 0.0f) {
     Serial.print("Moisture: ");
     Serial.print(soilMoisture, 1);
@@ -305,9 +360,32 @@ void loop() {
   }
 
   // Inside Temp & Humidity ----------------------------------------------------------------------------------------------------------//
-  insideDht();
+  insideDht(insideTemp, insideHum);
+  if (!isnan(insideTemp)) {
+    Serial.print(F("Inside Temp: "));
+    Serial.print(insideTemp);
+    Serial.println(F("°C"));
+  } else {
+    Serial.println(F("Inside Temp: INVALID"));
+  }
+
+  if (!isnan(insideHum)) {
+    Serial.print(F("Humidity: "));
+    Serial.print(insideHum);
+    Serial.println(F("%"));
+  } else {
+    Serial.println(F("Inside Hum: INVALID"));
+  }
+
   // Outside Thermisistor ----------------------------------------------------------------------------------------------------------//
   outsideTemp = outTemp();
+  if (!std::isnan(outsideTemp) && !std::isinf(outsideTemp) || outsideTemp <= -273.15 || outsideTemp >= 150) {
+        Serial.print(outsideTemp, 2);
+        Serial.println();
+    } else {
+      Serial.print(F("Outside Temp: INVALID"));
+    }
+  
   // Get GPS Data --------------------------------------------------------------------------------------------------------------//
   gpsData();
 
@@ -318,16 +396,45 @@ void loop() {
                  + ",Lat=" + String(gpsLat, 6)
                  + ",Lon=" + String(gpsLon, 6)
                  + ",Soil=" + String(soilMoisture, 1) + "%"
-                 + ",OutTemp=" + String(outsideTemp, 1) + "C";
-  
-  // Add AT send function to Payload string
-  sendLoRaData(payload, 2000);
+                 + ",OutTemp=" + String(outsideTemp, 1) + "C"
+                 + "\n";
 
-  // Delay between readings ---------------------------------------------------------------------------------------------------//
+  // Send soil data via LoRa
+  sendLoRaData(payload);
+  delay(1000); // delay before checking for response
+  // Reciever any responses from receiver module
+  receiveLoRaData();
+  delay(200); // delay between readings
+}
+
+// Main board system loop
+void loop() {
+
+  currentMillis = millis();
+
+  // Check for Soil Moisture Calibration via buttons
+  buttonWet.loop();
+  buttonDry.loop();
+
+  // Check time for testing 
+  if (checkTestingTime() == true) {
+    Serial.println("Testing invertal expired, testing..."); // debug
+    for (int i = 1; i <= 5; i++) {
+      if (breakTest == true) {
+        break;
+      }
+      updateSoilMoistureData();
+      Serial.println("Test: " + i);
+    }
+  } else if (checkTestingTime() == false) {
+    Serial.println("Testing interval not expired"); // debug
+  }
+
+  // Delay and encoding for GPS
   smartDelay(10);
 
   // If No data is encoded to GPS module in 5s = Error
   if (millis() > 5000 && gps.charsProcessed() < 10) {
-		Serial.println(F("No GPS data received: check wiring"));
+		Serial.println("No GPS data received: INVALID WIRING");
 	}
 }

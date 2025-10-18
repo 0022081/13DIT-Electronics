@@ -16,7 +16,8 @@ const float seriesResistor = 10000.0;  // 10k Ohm series resistor
 const float nominalResistance = 10000.0; // Resistance of thermistor at 25ºC
 const float nominalTemperature = 25.0;   // Nominal temperature (ºC)
 const float betaCoefficient = 3892.0;    // Beta coefficient of the thermistor
-const float VREF = 3.26f;                  // ADC reference (3.3V)
+const float VREF = 3.3f;                  // ADC reference (3.3V)
+float t_offset = -15.8;
 
 // Soil Data Constants ------------------------------------------------------------------//
 const uint8_t soilPin = A1;        // analog pin for envelope node
@@ -205,7 +206,7 @@ float outTemp() {
 
   float denom = (VREF - vout);
   if (denom <= 0.0f) return 150.0f;                // safety check: denominator must be >0
-  float rTherm = seriesResistor * (vout / denom);   // compute thermistor resistance (R_therm)
+  float rTherm = seriesResistor * (vout / (VREF - vout));    // compute thermistor resistance (R_therm)
 
   // compute temperature using Beta equation
   float t0 = nominalTemperature + 273.15f;           // T0 in Kelvin
@@ -215,8 +216,8 @@ float outTemp() {
 
   // convert to Celsius
   float tempC = tKelvin - 273.15f;
-
-  return tempC; // return temperature to payload
+  float actual_temp = tempC + t_offset;
+  return actual_temp; // return temperature to payload
 }
 
 // Read inside Temp & Humidity
